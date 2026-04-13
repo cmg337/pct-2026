@@ -435,23 +435,63 @@ function drawLeafletMap(mile){
 
   // Fetch real trail, then render everything
   fetchTrailGeoJSON().then(gj=>{
-    if(gj){
-      // Draw full trail as gray dashed
-      L.geoJSON(gj,{style:{color:C.grayLt,weight:3,opacity:.4,dashArray:'8 6'}}).addTo(leafMap);
+    // Build coord array and snapping function
+    const allCoords=gj?getAllTrailCoords(gj):null;
+    const startIdx=allCoords?findClosestTrailPoint(allCoords,32.59,-116.47):0;
 
-      // Draw hiked portion as solid teal overlay
+    let cumDist=null;
+    if(allCoords&&allCoords.length>1){
+      cumDist=[0];
+      for(let i=1;i<allCoords.length;i++){
+        const dlat=allCoords[i][0]-allCoords[i-1][0];
+        const dlng=allCoords[i][1]-allCoords[i-1][1];
+        cumDist.push(cumDist[i-1]+Math.sqrt(dlat*dlat+dlng*dlng));
+      }
+    }
+
+    function snapToTrail(m){
+      if(!allCoords||!cumDist) return getMilePos(m);
+      const frac=Math.max(0,Math.min(1,m/PCT_TOTAL));
+      const endIdx=allCoords.length-1;
+      const lo=Math.min(startIdx,endIdx),hi=Math.max(startIdx,endIdx);
+      const totalLen=cumDist[hi]-cumDist[lo];
+      const targetDist=cumDist[lo]+frac*totalLen;
+      let a=lo,b=hi;
+      while(b-a>1){const mid=(a+b)>>1;if(cumDist[mid]<targetDist)a=mid;else b=mid;}
+      const segLen=cumDist[b]-cumDist[a];
+      const t=segLen>0?(targetDist-cumDist[a])/segLen:0;
+      return {
+        lat:allCoords[a][0]+t*(allCoords[b][0]-allCoords[a][0]),
+        lng:allCoords[a][1]+t*(allCoords[b][1]-allCoords[a][1])
+      };
+    }
+
+    // Also return the trail coord index for a given mile (for slicing the hiked portion)
+    function mileToIdx(m){
+      if(!allCoords||!cumDist) return -1;
+      const frac=Math.max(0,Math.min(1,m/PCT_TOTAL));
+      const endIdx=allCoords.length-1;
+      const lo=Math.min(startIdx,endIdx),hi=Math.max(startIdx,endIdx);
+      const totalLen=cumDist[hi]-cumDist[lo];
+      const targetDist=cumDist[lo]+frac*totalLen;
+      let a=lo,b=hi;
+      while(b-a>1){const mid=(a+b)>>1;if(cumDist[mid]<targetDist)a=mid;else b=mid;}
+      return b;
+    }
+
+    if(gj){
+      // Full trail — gray dashed
+      L.geoJSON(gj,{style:{color:C.grayLt,weight:3,opacity:.4,dashArray:'8 6'}}).addTo(leafMap);
+      // Hiked portion — solid teal, sliced from real coords
       if(mile>0){
-        const allCoords=getAllTrailCoords(gj);
-        const curEst=getMilePos(mile);
-        const curIdx=findClosestTrailPoint(allCoords,curEst.lat,curEst.lng);
-        // Trail coords go south→north (Mexico→Canada), find start
-        const startIdx=findClosestTrailPoint(allCoords,32.59,-116.47);
-        const lo=Math.min(startIdx,curIdx),hi=Math.max(startIdx,curIdx);
-        const hikedCoords=allCoords.slice(lo,hi+1);
-        if(hikedCoords.length>1) L.polyline(hikedCoords,{color:C.teal,weight:4,opacity:.9}).addTo(leafMap);
+        const curIdx=mileToIdx(mile);
+        if(curIdx>startIdx){
+          const hikedCoords=allCoords.slice(Math.min(startIdx,curIdx),Math.max(startIdx,curIdx)+1);
+          if(hikedCoords.length>1) L.polyline(hikedCoords,{color:C.teal,weight:4,opacity:.9}).addTo(leafMap);
+        }
       }
     } else {
-      // Fallback: draw from waypoints
+      // Fallback waypoints
       L.polyline(WP.map(w=>[w.lat,w.lng]),{color:C.grayLt,weight:3,opacity:.45,dashArray:'8 6'}).addTo(leafMap);
       if(mile>0){
         const hw=WP.filter(w=>w.m<=mile);const cp=getMilePos(mile);hw.push({lat:cp.lat,lng:cp.lng});
@@ -459,27 +499,27 @@ function drawLeafletMap(mile){
       }
     }
 
-    // Landmarks
+    // Landmarks — snapped to trail
     LANDMARKS.forEach(lm=>{
-      const p=getMilePos(lm.m);const isH=lm.m<=mile;
+      const p=snapToTrail(lm.m);const isH=lm.m<=mile;
       L.circleMarker([p.lat,p.lng],{radius:4,fillColor:isH?C.teal:C.grayLt,fillOpacity:.8,color:'white',weight:1}).addTo(leafMap)
        .bindTooltip(lm.l,{permanent:false,direction:'right',offset:[8,0]});
     });
 
-    // Day camp markers
+    // Day camp markers — snapped to trail
     const entriesMap=getEntriesMap();
     mainData.forEach((d,i)=>{
       const m=num(d['end mile marker']);if(m==null)return;
-      const pos=getMilePos(m);
+      const pos=snapToTrail(m);
       const entry=entriesMap[dateKey(d.date)]||'';
       const marker=L.circleMarker([pos.lat,pos.lng],{radius:7,fillColor:C.purple,fillOpacity:.85,color:'white',weight:2}).addTo(leafMap);
       marker.bindPopup(dayPopup(d,i+1,entry),{maxWidth:300,minWidth:220});
       marker.bindTooltip(`Day ${i+1}: ${sd(d.date)} — mi ${fmt(m)}`,{direction:'top',offset:[0,-10]});
     });
 
-    // Current position
+    // Current position — snapped to trail
     if(mile>0){
-      const cur=getMilePos(mile);
+      const cur=snapToTrail(mile);
       L.circleMarker([cur.lat,cur.lng],{radius:14,fillColor:C.coral,fillOpacity:.15,color:C.coral,weight:2,opacity:.5}).addTo(leafMap);
       L.circleMarker([cur.lat,cur.lng],{radius:7,fillColor:C.coral,fillOpacity:1,color:'white',weight:2.5}).addTo(leafMap)
        .bindTooltip(`Current: mile ${fmt(mile)}`,{direction:'top',offset:[0,-12]});
