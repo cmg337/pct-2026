@@ -100,6 +100,34 @@
   .map-legend span { display: flex; align-items: center; gap: 5px; }
   .ml-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
   .ml-line { width: 16px; height: 3px; border-radius: 1px; display: inline-block; }
+
+  /* Weather card */
+  .wx-card {
+    background: var(--bg2); border-radius: var(--radius); padding: 16px 18px;
+    margin-bottom: 24px;
+  }
+  .wx-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .wx-title { font-size: .82rem; font-weight: 500; color: var(--tx2); }
+  .wx-loc { font-size: .68rem; color: var(--tx3); }
+  .wx-now { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+  .wx-icon { font-size: 2.4rem; line-height: 1; }
+  .wx-temp { font-size: 2rem; font-weight: 600; line-height: 1; }
+  .wx-desc { font-size: .82rem; color: var(--tx2); margin-top: 2px; }
+  .wx-details { display: flex; gap: 16px; flex-wrap: wrap; font-size: .78rem; color: var(--tx2); margin-bottom: 14px; }
+  .wx-details span { display: flex; align-items: center; gap: 4px; }
+  .wx-forecast { display: flex; gap: 6px; }
+  .wx-day {
+    flex: 1; text-align: center; background: var(--bg-card); border-radius: var(--radius-sm);
+    padding: 10px 6px; border: 1px solid var(--bd2); min-width: 0;
+  }
+  .wx-day-name { font-size: .68rem; color: var(--tx3); font-weight: 500; margin-bottom: 4px; }
+  .wx-day-icon { font-size: 1.2rem; margin-bottom: 4px; }
+  .wx-day-temps { font-size: .72rem; }
+  .wx-day-hi { font-weight: 500; }
+  .wx-day-lo { color: var(--tx3); }
+  .wx-day-precip { font-size: .65rem; color: var(--blue); margin-top: 2px; }
+  .wx-loading { font-size: .78rem; color: var(--tx3); padding: 8px 0; }
+
 </style>
 </head>
 <body>
@@ -307,6 +335,7 @@ function renderProgress(el){
       <div class="metric"><div class="metric-label">Est. days left</div><div class="metric-val" style="color:${C.coral}">${estDays?fmt(estDays):'—'}</div></div>
     </div>
     <div class="prog-track"><div class="prog-fill" style="width:${pct}%"></div></div>
+    <div id="wx-container"><div class="wx-card"><div class="wx-loading">Loading trail weather...</div></div></div>
     <div id="leaflet-map"></div>
     <div class="map-legend">
       <span><span class="ml-line" style="background:${C.teal}"></span>Hiked</span>
@@ -320,6 +349,7 @@ function renderProgress(el){
     <div class="chart-wrap" style="height:200px"><canvas id="ch-cum"></canvas></div>`;
 
   drawLeafletMap(mile);
+  fetchTrailWeather(mile);
 
   const cData=mainData.map((d,i)=>{
     const prev=i>0?num(mainData[i-1]['end mile marker'])||0:0;
@@ -537,6 +567,115 @@ function renderSocial(el){
 
   charts.push(new Chart(document.getElementById('ch-soc1'),{type:'bar',data:{labels:cData.map(d=>d.date),datasets:[{type:'bar',label:'People at camp',data:cData.map(d=>d.people),backgroundColor:C.purpleLt,borderRadius:4,order:2},{type:'line',label:'Social level',data:cData.map(d=>d.social),borderColor:C.teal,borderWidth:2,pointRadius:0,tension:.3,spanGaps:true,order:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
   charts.push(new Chart(document.getElementById('ch-soc2'),{type:'line',data:{labels:cData.map(d=>d.date),datasets:[{label:'% alone',data:cData.map(d=>d.pctAlone),borderColor:C.gray,borderWidth:2,pointRadius:0,tension:.3,spanGaps:true},{label:'Loneliness',data:cData.map(d=>d.lonely),borderColor:C.purple,borderWidth:2,pointRadius:0,tension:.3,spanGaps:true}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
+}
+
+// --- Weather (Open-Meteo, free, no key) ---
+const WMO_CODES={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Foggy',48:'Rime fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+  56:'Freezing drizzle',57:'Heavy freezing drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Heavy freezing rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
+  80:'Light showers',81:'Showers',82:'Heavy showers',
+  85:'Light snow showers',86:'Heavy snow showers',
+  95:'Thunderstorm',96:'Thunderstorm w/ hail',99:'Thunderstorm w/ heavy hail'};
+
+function wxIcon(code,isDay){
+  if(code<=1) return isDay?'☀️':'🌙';
+  if(code<=3) return isDay?'⛅':'☁️';
+  if(code<=48) return '🌫️';
+  if(code<=57) return '🌧️';
+  if(code<=67) return '🌧️';
+  if(code<=77) return '❄️';
+  if(code<=82) return '🌦️';
+  if(code<=86) return '🌨️';
+  return '⛈️';
+}
+
+function wxDayIcon(code){
+  if(code<=1) return '☀️';
+  if(code<=3) return '⛅';
+  if(code<=48) return '🌫️';
+  if(code<=57) return '🌧️';
+  if(code<=67) return '🌧️';
+  if(code<=77) return '❄️';
+  if(code<=82) return '🌦️';
+  if(code<=86) return '🌨️';
+  return '⛈️';
+}
+
+function nearestLandmark(mile){
+  let best=LANDMARKS[0];
+  for(const lm of LANDMARKS){if(Math.abs(lm.m-mile)<Math.abs(best.m-mile))best=lm;}
+  return best;
+}
+
+async function fetchTrailWeather(mile){
+  const el=document.getElementById('wx-container');
+  if(!el||mile<=0){if(el)el.innerHTML='';return;}
+
+  const pos=getMilePos(mile);
+  const lm=nearestLandmark(mile);
+  const lat=pos.lat.toFixed(2),lng=pos.lng.toFixed(2);
+
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America%2FLos_Angeles&forecast_days=4`;
+    const r=await fetch(url);
+    if(!r.ok) throw new Error(r.status);
+    const w=await r.json();
+    const cur=w.current;
+    const daily=w.daily;
+
+    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let forecastHtml='';
+    // skip today (index 0), show next 3 days
+    for(let i=1;i<Math.min(4,daily.time.length);i++){
+      const d=new Date(daily.time[i]+'T12:00:00');
+      const dn=dayNames[d.getDay()];
+      const hi=Math.round(daily.temperature_2m_max[i]);
+      const lo=Math.round(daily.temperature_2m_min[i]);
+      const code=daily.weather_code[i];
+      const precip=daily.precipitation_probability_max[i];
+      forecastHtml+=`<div class="wx-day">
+        <div class="wx-day-name">${dn}</div>
+        <div class="wx-day-icon">${wxDayIcon(code)}</div>
+        <div class="wx-day-temps"><span class="wx-day-hi">${hi}°</span> <span class="wx-day-lo">${lo}°</span></div>
+        ${precip>10?`<div class="wx-day-precip">${precip}% rain</div>`:''}
+      </div>`;
+    }
+
+    const temp=Math.round(cur.temperature_2m);
+    const feels=Math.round(cur.apparent_temperature);
+    const code=cur.weather_code;
+    const isDay=cur.is_day;
+    const wind=Math.round(cur.wind_speed_10m);
+    const gusts=Math.round(cur.wind_gusts_10m);
+    const humidity=Math.round(cur.relative_humidity_2m);
+    const desc=WMO_CODES[code]||'';
+
+    el.innerHTML=`<div class="wx-card">
+      <div class="wx-header">
+        <span class="wx-title">Trail weather now</span>
+        <span class="wx-loc">Near ${escHtml(lm.l)} · mi ${fmt(mile)}</span>
+      </div>
+      <div class="wx-now">
+        <div class="wx-icon">${wxIcon(code,isDay)}</div>
+        <div>
+          <div class="wx-temp">${temp}°F</div>
+          <div class="wx-desc">${desc}</div>
+        </div>
+      </div>
+      <div class="wx-details">
+        <span>Feels like ${feels}°</span>
+        <span>Wind ${wind} mph${gusts>wind+5?' (gusts '+gusts+')':''}</span>
+        <span>Humidity ${humidity}%</span>
+        ${cur.precipitation>0?`<span>Precip ${cur.precipitation}"</span>`:''}
+      </div>
+      <div class="wx-forecast">${forecastHtml}</div>
+    </div>`;
+  }catch(e){
+    console.warn('Weather fetch failed',e);
+    el.innerHTML='';
+  }
 }
 
 loadData();
