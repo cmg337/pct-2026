@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PCT 2026 — Live Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #fafaf8; --bg2: #f1efe8; --bg-card: #ffffff;
+    --tx: #1a1a18; --tx2: #5f5e5a; --tx3: #888780;
+    --bd: rgba(0,0,0,.1); --bd2: rgba(0,0,0,.06);
+    --teal: #1D9E75; --teal-lt: #5DCAA5; --teal-bg: #E1F5EE;
+    --coral: #D85A30; --coral-lt: #F0997B; --coral-bg: #FAECE7;
+    --purple: #534AB7; --purple-lt: #AFA9EC; --purple-bg: #EEEDFE;
+    --blue: #378ADD; --blue-lt: #85B7EB; --blue-bg: #E6F1FB;
+    --amber: #BA7517; --amber-lt: #FAC775; --amber-bg: #FAEEDA;
+    --pink: #D4537E; --pink-lt: #ED93B1; --pink-bg: #FBEAF0;
+    --green: #639922; --green-lt: #97C459;
+    --red: #E24B4A; --gray: #888780; --gray-lt: #B4B2A9;
+    --radius: 10px; --radius-sm: 6px;
+    --font: 'DM Sans', system-ui, -apple-system, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18; --bg2: #2c2c2a; --bg-card: #232321;
+      --tx: #e8e7e2; --tx2: #b4b2a9; --tx3: #888780;
+      --bd: rgba(255,255,255,.12); --bd2: rgba(255,255,255,.06);
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 15px; }
+  body {
+    font-family: var(--font); background: var(--bg); color: var(--tx);
+    line-height: 1.5; min-height: 100vh; -webkit-font-smoothing: antialiased;
+  }
+  .shell { max-width: 680px; margin: 0 auto; padding: 24px 16px 60px; }
+  .hdr { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 2px; }
+  .hdr h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: -.02em; }
+  .sub { font-size: .72rem; color: var(--tx3); margin-bottom: 18px; }
+  .btn-refresh {
+    font-family: var(--font); font-size: .72rem; font-weight: 500;
+    background: transparent; border: 1px solid var(--bd); border-radius: var(--radius-sm);
+    color: var(--tx2); padding: 4px 12px; cursor: pointer; transition: .15s;
+  }
+  .btn-refresh:hover { background: var(--bg2); }
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 22px; }
+  .tab {
+    font-family: var(--font); font-size: .82rem; font-weight: 400;
+    background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+    color: var(--tx3); padding: 5px 14px; cursor: pointer; transition: .15s;
+  }
+  .tab.active { background: var(--bg-card); border-color: var(--bd); color: var(--tx); font-weight: 500; }
+  .tab:hover:not(.active) { color: var(--tx2); }
+  .metrics { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+  .metric { background: var(--bg2); border-radius: var(--radius); padding: 14px 16px; flex: 1 1 0; min-width: 100px; }
+  .metric-label { font-size: .72rem; color: var(--tx3); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .metric-val { font-size: 1.4rem; font-weight: 600; line-height: 1.2; }
+  .metric-sub { font-size: .68rem; color: var(--tx3); margin-top: 2px; }
+  .prog-track { height: 8px; border-radius: 4px; background: var(--bg2); margin-bottom: 24px; overflow: hidden; }
+  .prog-fill { height: 100%; border-radius: 4px; background: var(--teal); transition: width .6s; }
+  .chart-wrap { position: relative; width: 100%; margin-bottom: 20px; }
+  .chart-label { font-size: .82rem; font-weight: 500; color: var(--tx2); margin-bottom: 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .72rem; color: var(--tx3); margin-top: 6px; margin-bottom: 16px; }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .leg-sq { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .leg-ln { width: 12px; height: 3px; border-radius: 1px; display: inline-block; }
+  .section { font-size: .82rem; font-weight: 500; color: var(--tx2); margin-bottom: 8px; margin-top: 20px; }
+  .log-row { display: flex; align-items: center; gap: 10px; font-size: .8rem; padding: 7px 0; border-bottom: 1px solid var(--bd2); }
+  .log-row .date { font-weight: 500; min-width: 56px; }
+  .town-card { background: var(--bg2); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 6px; }
+  .town-name { font-weight: 500; font-size: .92rem; }
+  .town-mile { font-size: .72rem; color: var(--tx3); }
+  .town-detail { font-size: .78rem; color: var(--tx2); margin-top: 2px; }
+  .town-rest { font-size: .72rem; color: var(--tx3); margin-top: 2px; }
+  .radar-wrap { position: relative; max-width: 340px; margin: 0 auto; }
+  .avg-pills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+  .avg-pill { background: var(--bg2); border-radius: var(--radius-sm); padding: 6px 12px; font-size: .78rem; display: flex; align-items: center; gap: 6px; }
+  .avg-pill .dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .center-msg { padding: 60px 20px; text-align: center; color: var(--tx3); font-size: .92rem; }
+  .err { color: var(--red); }
+
+  /* Leaflet */
+  #leaflet-map { width: 100%; height: 500px; border-radius: var(--radius); margin-bottom: 12px; z-index: 1; }
+  .leaflet-popup-content-wrapper { font-family: var(--font) !important; border-radius: 10px !important; box-shadow: 0 4px 20px rgba(0,0,0,.15) !important; }
+  .leaflet-popup-content { margin: 14px 16px !important; font-size: 13px !important; line-height: 1.5 !important; min-width: 180px; }
+  .popup-date { font-weight: 600; font-size: 15px; margin-bottom: 2px; }
+  .popup-mile { font-size: 12px; color: #1D9E75; font-weight: 500; margin-bottom: 8px; }
+  .popup-stats { display: grid; grid-template-columns: auto auto; gap: 3px 14px; font-size: 12px; margin-bottom: 6px; }
+  .popup-stats .lbl { color: #888780; }
+  .popup-stats .val { font-weight: 500; text-align: right; }
+  .popup-entry { font-size: 12px; color: #5f5e5a; border-top: 1px solid #eee; padding-top: 8px; margin-top: 6px; font-style: italic; max-height: 120px; overflow-y: auto; line-height: 1.55; }
+  .popup-ratings { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 8px; }
+  .popup-pill { font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 500; white-space: nowrap; }
+  .map-legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: .72rem; color: var(--tx3); margin-bottom: 20px; }
+  .map-legend span { display: flex; align-items: center; gap: 5px; }
+  .ml-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .ml-line { width: 16px; height: 3px; border-radius: 1px; display: inline-block; }
+
+  /* Weather card */
+  .wx-card {
+    background: var(--bg2); border-radius: var(--radius); padding: 16px 18px;
+    margin-bottom: 24px;
+  }
+  .wx-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .wx-title { font-size: .82rem; font-weight: 500; color: var(--tx2); }
+  .wx-loc { font-size: .68rem; color: var(--tx3); }
+  .wx-now { display: flex; align-items: center; gap: 16px; margin-bottom: 14px; }
+  .wx-icon { font-size: 2.4rem; line-height: 1; }
+  .wx-temp { font-size: 2rem; font-weight: 600; line-height: 1; }
+  .wx-desc { font-size: .82rem; color: var(--tx2); margin-top: 2px; }
+  .wx-details { display: flex; gap: 16px; flex-wrap: wrap; font-size: .78rem; color: var(--tx2); margin-bottom: 14px; }
+  .wx-details span { display: flex; align-items: center; gap: 4px; }
+  .wx-forecast { display: flex; gap: 6px; }
+  .wx-day {
+    flex: 1; text-align: center; background: var(--bg-card); border-radius: var(--radius-sm);
+    padding: 10px 6px; border: 1px solid var(--bd2); min-width: 0;
+  }
+  .wx-day-name { font-size: .68rem; color: var(--tx3); font-weight: 500; margin-bottom: 4px; }
+  .wx-day-icon { font-size: 1.2rem; margin-bottom: 4px; }
+  .wx-day-temps { font-size: .72rem; }
+  .wx-day-hi { font-weight: 500; }
+  .wx-day-lo { color: var(--tx3); }
+  .wx-day-precip { font-size: .65rem; color: var(--blue); margin-top: 2px; }
+  .wx-loading { font-size: .78rem; color: var(--tx3); padding: 8px 0; }
+
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="hdr">
+    <h1>Pacific Crest Trail 2026</h1>
+    <button class="btn-refresh" onclick="loadData()">Refresh</button>
+  </div>
+  <div class="sub" id="subtitle">Loading...</div>
+  <div class="tabs" id="tabs"></div>
+  <div id="content"></div>
+</div>
+
+<script>
+const SHEET_ID='2PACX-1vQQ7hgL-u87lGBjAHFrfvn-sUKc3tcsCGso-K7l91wTjEuORVgwBzEs-aCJPzch_8Oy1UBT6jRUis2-';
+const DATA_GID='0', TOWN_GID='358115642', ENTRIES_GID='317284039';
+const PCT_TOTAL=2650;
+
+const C={teal:'#1D9E75',tealLt:'#5DCAA5',tealBg:'#E1F5EE',coral:'#D85A30',coralLt:'#F0997B',coralBg:'#FAECE7',purple:'#534AB7',purpleLt:'#AFA9EC',purpleBg:'#EEEDFE',blue:'#378ADD',blueLt:'#85B7EB',blueBg:'#E6F1FB',amber:'#BA7517',amberLt:'#FAC775',amberBg:'#FAEEDA',pink:'#D4537E',pinkLt:'#ED93B1',pinkBg:'#FBEAF0',green:'#639922',greenLt:'#97C459',red:'#E24B4A',gray:'#888780',grayLt:'#B4B2A9'};
+
+let mainData=[],townData=[],entriesData=[],activeTab='progress',charts=[],leafMap=null;
+
+// Dense PCT waypoints for smooth trail polyline
+const WP=[
+  {m:0,lat:32.59,lng:-116.47},{m:30,lat:32.79,lng:-116.50},{m:60,lat:32.96,lng:-116.53},
+  {m:90,lat:33.12,lng:-116.55},{m:110,lat:33.24,lng:-116.57},{m:150,lat:33.35,lng:-116.61},
+  {m:180,lat:33.44,lng:-116.65},{m:210,lat:33.52,lng:-116.68},{m:260,lat:33.72,lng:-116.82},
+  {m:300,lat:33.96,lng:-117.21},{m:342,lat:34.22,lng:-117.63},{m:380,lat:34.34,lng:-117.82},
+  {m:410,lat:34.42,lng:-118.00},{m:444,lat:34.52,lng:-118.14},{m:480,lat:34.58,lng:-118.34},
+  {m:520,lat:34.65,lng:-118.55},{m:558,lat:34.71,lng:-118.72},{m:600,lat:35.00,lng:-118.62},
+  {m:630,lat:35.20,lng:-118.54},{m:652,lat:35.38,lng:-118.48},{m:700,lat:35.76,lng:-118.38},
+  {m:750,lat:36.15,lng:-118.36},{m:789,lat:36.45,lng:-118.34},{m:830,lat:36.68,lng:-118.48},
+  {m:870,lat:36.96,lng:-118.68},{m:906,lat:37.24,lng:-118.92},{m:950,lat:37.56,lng:-119.08},
+  {m:980,lat:37.78,lng:-119.18},{m:1017,lat:38.03,lng:-119.33},{m:1050,lat:38.28,lng:-119.55},
+  {m:1075,lat:38.48,lng:-119.74},{m:1094,lat:38.64,lng:-119.90},{m:1130,lat:38.88,lng:-120.06},
+  {m:1160,lat:39.06,lng:-120.18},{m:1195,lat:39.28,lng:-120.30},{m:1240,lat:39.58,lng:-120.62},
+  {m:1280,lat:39.88,lng:-121.08},{m:1330,lat:40.23,lng:-121.53},{m:1380,lat:40.56,lng:-121.78},
+  {m:1440,lat:40.88,lng:-122.06},{m:1500,lat:41.18,lng:-122.32},{m:1550,lat:41.46,lng:-122.50},
+  {m:1600,lat:41.73,lng:-122.64},{m:1645,lat:41.90,lng:-122.63},{m:1692,lat:42.07,lng:-122.62},
+  {m:1750,lat:42.42,lng:-122.40},{m:1830,lat:42.92,lng:-122.12},{m:1900,lat:43.30,lng:-121.96},
+  {m:1970,lat:43.66,lng:-121.82},{m:2030,lat:44.08,lng:-121.80},{m:2070,lat:44.36,lng:-121.80},
+  {m:2108,lat:44.62,lng:-121.80},{m:2130,lat:44.86,lng:-121.75},{m:2150,lat:45.09,lng:-121.70},
+  {m:2190,lat:45.36,lng:-121.76},{m:2240,lat:45.63,lng:-121.82},{m:2290,lat:45.88,lng:-121.72},
+  {m:2340,lat:46.12,lng:-121.60},{m:2395,lat:46.37,lng:-121.52},{m:2430,lat:46.56,lng:-121.36},
+  {m:2470,lat:46.77,lng:-121.18},{m:2510,lat:47.08,lng:-120.96},{m:2540,lat:47.30,lng:-120.82},
+  {m:2572,lat:47.53,lng:-120.66},{m:2600,lat:47.88,lng:-120.68},{m:2625,lat:48.40,lng:-120.70},
+  {m:2650,lat:48.99,lng:-120.73},
+];
+
+const LANDMARKS=[
+  {m:0,l:'Campo (Mexico)'},{m:210,l:'Idyllwild'},{m:444,l:'Agua Dulce'},
+  {m:652,l:'Kennedy Meadows'},{m:906,l:'Mammoth Lakes'},{m:1094,l:'Lake Tahoe'},
+  {m:1500,l:'Mt Shasta'},{m:1692,l:'Ashland, OR'},{m:1830,l:'Crater Lake'},
+  {m:2150,l:'Timberline Lodge'},{m:2240,l:'Cascade Locks'},{m:2470,l:'Snoqualmie Pass'},
+  {m:2650,l:'Manning Park (Canada)'},
+];
+
+// --- Utility ---
+function parseCSV(text){
+  const cells=[];let cur='',inQ=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];if(ch==='"'){if(inQ&&text[i+1]==='"'){cur+='"';i++}else inQ=!inQ}else if(ch===','&&!inQ){cells.push(cur);cur=''}else if((ch==='\n'||ch==='\r')&&!inQ){if(ch==='\r'&&text[i+1]==='\n')i++;cells.push(cur);cur='%%NR%%'}else cur+=ch}
+  cells.push(cur);const rows=[];let row=[];
+  for(const c of cells){if(c.startsWith('%%NR%%')){if(row.length)rows.push(row);row=[c.replace('%%NR%%','')]}else row.push(c)}
+  if(row.length)rows.push(row);if(!rows.length)return[];
+  const hdr=rows[0].map(h=>h.trim().toLowerCase());
+  return rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>{const o={};hdr.forEach((h,i)=>o[h]=(r[i]||'').trim());return o});
+}
+
+function num(v){const x=parseFloat(v);return isNaN(x)?null:x}
+function fmt(x,d=0){return x==null?'—':x.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d})}
+function sd(v){if(!v)return '';const d=new Date(v);return isNaN(d)?v:d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}
+function dateKey(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return v.trim().toLowerCase();return d.toISOString().split('T')[0]}
+function isDark(){return window.matchMedia('(prefers-color-scheme: dark)').matches}
+function gridColor(){return isDark()?'rgba(255,255,255,.08)':'rgba(0,0,0,.07)'}
+function tickColor(){return '#888780'}
+function destroyCharts(){charts.forEach(c=>c.destroy());charts=[]}
+function destroyMap(){if(leafMap){leafMap.remove();leafMap=null}}
+
+function getMilePos(mile){
+  if(mile<=0)return WP[0];if(mile>=PCT_TOTAL)return WP[WP.length-1];
+  for(let i=0;i<WP.length-1;i++){if(mile>=WP[i].m&&mile<=WP[i+1].m){const t=(mile-WP[i].m)/(WP[i+1].m-WP[i].m);return{lat:WP[i].lat+t*(WP[i+1].lat-WP[i].lat),lng:WP[i].lng+t*(WP[i+1].lng-WP[i].lng),m:mile}}}
+  return WP[0];
+}
+function currentMile(){for(let i=mainData.length-1;i>=0;i--){const m=num(mainData[i]['end mile marker']);if(m!=null)return m}return 0}
+
+function getEntriesMap(){
+  const map={};
+  for(const e of entriesData){
+    // Flexibly match whatever column names exist in the entries sheet
+    const d=e.date||e.day||e['entry date']||Object.values(e)[0]||'';
+    const text=e.entry||e.notes||e.journal||e.text||e['journal entry']||e.entries||Object.values(e)[1]||'';
+    if(d&&text) map[dateKey(d)]=text;
+  }
+  return map;
+}
+
+function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+function dayPopup(d,dayNum,entry){
+  const mile=num(d['end mile marker']);
+  const enjoy=num(d['enjoyment']||d['enjoyment ']);
+  const accom=num(d['accomplishment']||d['accomplishment ']);
+  const diff=num(d['difficulty']||d['difficulty ']);
+  const beauty=num(d['natural beauty']||d['natural beauty ']);
+  const sore=num(d['soreness']);
+  const injury=num(d['injury level']);
+  const weather=d.weather||'';
+  const high=num(d['day high temp']);
+  const low=num(d['night low temp']);
+  const steps=num(d.steps);
+  const magic=d['trail magic']||'';
+  const lonely=num(d['lonelyness']);
+  const social=num(d['social interaction']||d['social interaction ']);
+  const precip=d['overnight precipitation']||d['overnight precipitation ']||'';
+
+  let h=`<div class="popup-date">Day ${dayNum} — ${sd(d.date)}</div>`;
+  if(mile!=null) h+=`<div class="popup-mile">Mile ${fmt(mile)} · ${fmt(Math.round(mile/PCT_TOTAL*1000)/10,1)}% of trail</div>`;
+
+  h+=`<div class="popup-stats">`;
+  if(high!=null) h+=`<span class="lbl">High</span><span class="val">${Math.round(high)}°</span>`;
+  if(low!=null) h+=`<span class="lbl">Low</span><span class="val">${Math.round(low)}°</span>`;
+  if(weather) h+=`<span class="lbl">Weather</span><span class="val">${escHtml(weather)}</span>`;
+  if(precip&&precip.toLowerCase()!=='no'&&precip.trim()!=='0') h+=`<span class="lbl">Precip</span><span class="val">${escHtml(precip)}</span>`;
+  if(steps!=null) h+=`<span class="lbl">Steps</span><span class="val">${fmt(steps)}</span>`;
+  if(magic&&magic.toLowerCase()!=='no'&&magic.trim()!=='0'&&magic.trim()!=='')
+    h+=`<span class="lbl">Trail magic</span><span class="val" style="color:${C.amber}">✓</span>`;
+  h+=`</div>`;
+
+  const pills=[];
+  if(enjoy!=null) pills.push({l:'Enjoy',v:enjoy,bg:'#E1F5EE',c:'#085041'});
+  if(accom!=null) pills.push({l:'Accomplish',v:accom,bg:'#EAF3DE',c:'#173404'});
+  if(diff!=null) pills.push({l:'Difficulty',v:diff,bg:'#FAECE7',c:'#712B13'});
+  if(beauty!=null) pills.push({l:'Beauty',v:beauty,bg:'#E6F1FB',c:'#0C447C'});
+  if(sore!=null) pills.push({l:'Soreness',v:sore,bg:'#FBEAF0',c:'#72243E'});
+  if(injury!=null&&injury>0) pills.push({l:'Injury',v:injury,bg:'#FCEBEB',c:'#791F1F'});
+  if(lonely!=null) pills.push({l:'Lonely',v:lonely,bg:'#EEEDFE',c:'#26215C'});
+  if(social!=null) pills.push({l:'Social',v:social,bg:'#E1F5EE',c:'#04342C'});
+
+  if(pills.length){
+    h+=`<div class="popup-ratings">`;
+    pills.forEach(p=>{h+=`<span class="popup-pill" style="background:${p.bg};color:${p.c}">${p.l} ${p.v}</span>`});
+    h+=`</div>`;
+  }
+
+  if(entry) h+=`<div class="popup-entry">${escHtml(entry)}</div>`;
+  return h;
+}
+
+// --- Data Loading ---
+async function loadData(){
+  document.getElementById('subtitle').textContent='Loading...';
+  document.getElementById('content').innerHTML='';
+  destroyCharts();destroyMap();
+
+  const gids=[DATA_GID,TOWN_GID,ENTRIES_GID];
+  const gviz=gids.map(g=>`https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${g}`);
+  const pub=gids.map(g=>`https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?gid=${g}&single=true&output=csv`);
+
+  let ok=false;
+  for(const batch of[gviz,pub]){
+    try{
+      const res=await Promise.all(batch.map(u=>fetch(u)));
+      const txt=await Promise.all(res.map(r=>r.text()));
+      const p=parseCSV(txt[0]);
+      if(!p.length)throw new Error('empty');
+      mainData=p;townData=parseCSV(txt[1]);entriesData=parseCSV(txt[2]);
+      ok=true;break;
+    }catch(e){}
+  }
+
+  if(!ok){
+    document.getElementById('subtitle').textContent='';
+    document.getElementById('content').innerHTML='<div class="center-msg err">Could not load data.<br>Make sure the Google Sheet is published to web<br>(File → Share → Publish to web).</div>';
+    return;
+  }
+
+  const now=new Date();
+  document.getElementById('subtitle').textContent=`Updated ${now.toLocaleTimeString()} · ${mainData.length} day${mainData.length!==1?'s':''} logged`;
+  renderTabs();renderTab();
+}
+
+// --- Tabs ---
+function renderTabs(){
+  const tabs=[{k:'progress',l:'Progress'},{k:'bodymind',l:'Body & mind'},{k:'stats',l:'Stats'},{k:'weather',l:'Weather'},{k:'towns',l:'Towns'},{k:'social',l:'Social'}];
+  document.getElementById('tabs').innerHTML=tabs.map(t=>`<button class="tab${t.k===activeTab?' active':''}" onclick="switchTab('${t.k}')">${t.l}</button>`).join('');
+}
+function switchTab(k){activeTab=k;destroyCharts();destroyMap();renderTabs();renderTab()}
+function renderTab(){
+  const el=document.getElementById('content');el.innerHTML='';destroyCharts();destroyMap();
+  ({progress:renderProgress,bodymind:renderBodyMind,stats:renderStats,weather:renderWeather,towns:renderTowns,social:renderSocial})[activeTab](el);
+}
+
+// --- Progress Tab ---
+function renderProgress(el){
+  const mile=currentMile(),totalDays=mainData.length;
+  const avg=totalDays>0&&mile>0?Math.round(mile/totalDays*10)/10:0;
+  const rem=PCT_TOTAL-mile,estDays=avg>0?Math.ceil(rem/avg):null;
+  const pct=mile?Math.round(mile/PCT_TOTAL*1000)/10:0;
+
+  el.innerHTML=`
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Current mile</div><div class="metric-val" style="color:${C.teal}">${fmt(mile)}</div><div class="metric-sub">of ${fmt(PCT_TOTAL)}</div></div>
+      <div class="metric"><div class="metric-label">% complete</div><div class="metric-val" style="color:${C.purple}">${pct}%</div></div>
+      <div class="metric"><div class="metric-label">Avg miles/day</div><div class="metric-val" style="color:${C.blue}">${fmt(avg,1)}</div></div>
+      <div class="metric"><div class="metric-label">Est. days left</div><div class="metric-val" style="color:${C.coral}">${estDays?fmt(estDays):'—'}</div></div>
+    </div>
+    <div class="prog-track"><div class="prog-fill" style="width:${pct}%"></div></div>
+    <div id="wx-container"><div class="wx-card"><div class="wx-loading">Loading trail weather...</div></div></div>
+    <div id="leaflet-map"></div>
+    <div class="map-legend">
+      <span><span class="ml-line" style="background:${C.teal}"></span>Hiked</span>
+      <span><span class="ml-line" style="background:${C.grayLt};border-style:dashed"></span>Remaining</span>
+      <span><span class="ml-dot" style="background:${C.coral}"></span>Current</span>
+      <span><span class="ml-dot" style="background:${C.purple}"></span>Day camp (click for stats)</span>
+    </div>
+    <div class="chart-label">Daily miles</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="ch-daily"></canvas></div>
+    <div class="chart-label">Cumulative progress</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="ch-cum"></canvas></div>`;
+
+  drawLeafletMap(mile);
+  fetchTrailWeather(mile);
+
+  const cData=mainData.map((d,i)=>{
+    const prev=i>0?num(mainData[i-1]['end mile marker'])||0:0;
+    const cur=num(d['end mile marker'])||0;
+    return{date:sd(d.date),daily:Math.max(0,Math.round((cur-prev)*10)/10),cum:cur};
+  }).filter(d=>d.daily>0||d.cum>0);
+
+  charts.push(new Chart(document.getElementById('ch-daily'),{
+    type:'bar',data:{labels:cData.map(d=>d.date),datasets:[{label:'Miles',data:cData.map(d=>d.daily),backgroundColor:C.teal,borderRadius:4}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}
+  }));
+  charts.push(new Chart(document.getElementById('ch-cum'),{
+    type:'line',data:{labels:cData.map(d=>d.date),datasets:[{label:'Total miles',data:cData.map(d=>d.cum),borderColor:C.purple,backgroundColor:C.purpleBg+'80',fill:true,tension:.3,pointRadius:2}]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{min:0,max:PCT_TOTAL,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}
+  }));
+}
+
+// PCTA official ArcGIS FeatureServer — try multiple query formats
+const PCTA_URLS=[
+  // Standard GeoJSON query
+  'https://services5.arcgis.com/ZldHa25efPFpMmfB/ArcGIS/rest/services/PCT_Centerline/FeatureServer/0/query?where=1%3D1&outFields=OBJECTID&returnGeometry=true&geometryPrecision=4&outSR=4326&maxAllowableOffset=0.002&f=geojson',
+  // Without maxAllowableOffset
+  'https://services5.arcgis.com/ZldHa25efPFpMmfB/ArcGIS/rest/services/PCT_Centerline/FeatureServer/0/query?where=1%3D1&outFields=OBJECTID&returnGeometry=true&geometryPrecision=4&outSR=4326&f=geojson',
+  // Try PCTA_Centerline (alt name)
+  'https://services5.arcgis.com/ZldHa25efPFpMmfB/ArcGIS/rest/services/PCTA_Centerline/FeatureServer/0/query?where=1%3D1&outFields=OBJECTID&returnGeometry=true&geometryPrecision=4&outSR=4326&f=geojson',
+  // Try Full_PCT
+  'https://services5.arcgis.com/ZldHa25efPFpMmfB/ArcGIS/rest/services/Full_PCT/FeatureServer/0/query?where=1%3D1&outFields=OBJECTID&returnGeometry=true&geometryPrecision=4&outSR=4326&f=geojson',
+  // Hosted GeoJSON from the repo itself (user can add pct-trail.geojson to their repo)
+  './pct-trail.geojson',
+];
+
+let cachedTrailGeoJSON=null;
+
+async function fetchTrailGeoJSON(){
+  if(cachedTrailGeoJSON) return cachedTrailGeoJSON;
+  for(const url of PCTA_URLS){
+    try{
+      const r=await fetch(url);
+      if(!r.ok) continue;
+      const gj=await r.json();
+      if(gj&&gj.features&&gj.features.length>0){
+        console.log('Trail loaded from:',url,'features:',gj.features.length);
+        cachedTrailGeoJSON=gj;return gj;
+      }
+    }catch(e){continue;}
+  }
+  console.warn('All trail sources failed, using dense waypoint fallback');
+  return null;
+}
+
+// Extract all coords from GeoJSON as flat [lat,lng] array for distance calcs
+function getAllTrailCoords(gj){
+  const coords=[];
+  for(const f of gj.features){
+    const g=f.geometry;
+    if(g.type==='LineString') g.coordinates.forEach(c=>coords.push([c[1],c[0]]));
+    else if(g.type==='MultiLineString') g.coordinates.forEach(ls=>ls.forEach(c=>coords.push([c[1],c[0]])));
+  }
+  return coords;
+}
+
+// Find the closest point on the real trail coords to a waypoint-estimated position
+function findClosestTrailPoint(trailCoords,lat,lng){
+  let best=0,bestD=Infinity;
+  for(let i=0;i<trailCoords.length;i++){
+    const d=(trailCoords[i][0]-lat)**2+(trailCoords[i][1]-lng)**2;
+    if(d<bestD){bestD=d;best=i;}
+  }
+  return best;
+}
+
+function drawLeafletMap(mile){
+  const dk=isDark();
+  const tileUrl=dk
+    ?'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'
+    :'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png';
+
+  leafMap=L.map('leaflet-map',{scrollWheelZoom:true}).setView([40.5,-120.5],5);
+  L.tileLayer(tileUrl,{
+    attribution:'&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> · Trail data: <a href="https://www.pcta.org/discover-the-trail/maps/pct-data/">PCTA</a> (CC-BY-4.0)',
+    subdomains:'abcd',maxZoom:16
+  }).addTo(leafMap);
+
+  // Fetch real trail, then render everything
+  fetchTrailGeoJSON().then(gj=>{
+    // Build coord array and snapping function
+    const allCoords=gj?getAllTrailCoords(gj):null;
+    const startIdx=allCoords?findClosestTrailPoint(allCoords,32.59,-116.47):0;
+
+    let cumDist=null;
+    if(allCoords&&allCoords.length>1){
+      cumDist=[0];
+      for(let i=1;i<allCoords.length;i++){
+        const dlat=allCoords[i][0]-allCoords[i-1][0];
+        const dlng=allCoords[i][1]-allCoords[i-1][1];
+        cumDist.push(cumDist[i-1]+Math.sqrt(dlat*dlat+dlng*dlng));
+      }
+    }
+
+    function snapToTrail(m){
+      if(!allCoords||!cumDist) return getMilePos(m);
+      const frac=Math.max(0,Math.min(1,m/PCT_TOTAL));
+      const endIdx=allCoords.length-1;
+      const lo=Math.min(startIdx,endIdx),hi=Math.max(startIdx,endIdx);
+      const totalLen=cumDist[hi]-cumDist[lo];
+      const targetDist=cumDist[lo]+frac*totalLen;
+      let a=lo,b=hi;
+      while(b-a>1){const mid=(a+b)>>1;if(cumDist[mid]<targetDist)a=mid;else b=mid;}
+      const segLen=cumDist[b]-cumDist[a];
+      const t=segLen>0?(targetDist-cumDist[a])/segLen:0;
+      return {
+        lat:allCoords[a][0]+t*(allCoords[b][0]-allCoords[a][0]),
+        lng:allCoords[a][1]+t*(allCoords[b][1]-allCoords[a][1])
+      };
+    }
+
+    // Also return the trail coord index for a given mile (for slicing the hiked portion)
+    function mileToIdx(m){
+      if(!allCoords||!cumDist) return -1;
+      const frac=Math.max(0,Math.min(1,m/PCT_TOTAL));
+      const endIdx=allCoords.length-1;
+      const lo=Math.min(startIdx,endIdx),hi=Math.max(startIdx,endIdx);
+      const totalLen=cumDist[hi]-cumDist[lo];
+      const targetDist=cumDist[lo]+frac*totalLen;
+      let a=lo,b=hi;
+      while(b-a>1){const mid=(a+b)>>1;if(cumDist[mid]<targetDist)a=mid;else b=mid;}
+      return b;
+    }
+
+    if(gj){
+      // Full trail — gray dashed
+      L.geoJSON(gj,{style:{color:C.grayLt,weight:3,opacity:.4,dashArray:'8 6'}}).addTo(leafMap);
+      // Hiked portion — solid teal, sliced from real coords
+      if(mile>0){
+        const curIdx=mileToIdx(mile);
+        if(curIdx>startIdx){
+          const hikedCoords=allCoords.slice(Math.min(startIdx,curIdx),Math.max(startIdx,curIdx)+1);
+          if(hikedCoords.length>1) L.polyline(hikedCoords,{color:C.teal,weight:4,opacity:.9}).addTo(leafMap);
+        }
+      }
+    } else {
+      // Fallback waypoints
+      L.polyline(WP.map(w=>[w.lat,w.lng]),{color:C.grayLt,weight:3,opacity:.45,dashArray:'8 6'}).addTo(leafMap);
+      if(mile>0){
+        const hw=WP.filter(w=>w.m<=mile);const cp=getMilePos(mile);hw.push({lat:cp.lat,lng:cp.lng});
+        L.polyline(hw.map(w=>[w.lat,w.lng]),{color:C.teal,weight:4,opacity:.9}).addTo(leafMap);
+      }
+    }
+
+    // Landmarks — snapped to trail
+    LANDMARKS.forEach(lm=>{
+      const p=snapToTrail(lm.m);const isH=lm.m<=mile;
+      L.circleMarker([p.lat,p.lng],{radius:4,fillColor:isH?C.teal:C.grayLt,fillOpacity:.8,color:'white',weight:1}).addTo(leafMap)
+       .bindTooltip(lm.l,{permanent:false,direction:'right',offset:[8,0]});
+    });
+
+    // Day camp markers — snapped to trail
+    const entriesMap=getEntriesMap();
+    mainData.forEach((d,i)=>{
+      const m=num(d['end mile marker']);if(m==null)return;
+      const pos=snapToTrail(m);
+      const entry=entriesMap[dateKey(d.date)]||'';
+      const marker=L.circleMarker([pos.lat,pos.lng],{radius:7,fillColor:C.purple,fillOpacity:.85,color:'white',weight:2}).addTo(leafMap);
+      marker.bindPopup(dayPopup(d,i+1,entry),{maxWidth:300,minWidth:220});
+      marker.bindTooltip(`Day ${i+1}: ${sd(d.date)} — mi ${fmt(m)}`,{direction:'top',offset:[0,-10]});
+    });
+
+    // Current position — snapped to trail
+    if(mile>0){
+      const cur=snapToTrail(mile);
+      L.circleMarker([cur.lat,cur.lng],{radius:14,fillColor:C.coral,fillOpacity:.15,color:C.coral,weight:2,opacity:.5}).addTo(leafMap);
+      L.circleMarker([cur.lat,cur.lng],{radius:7,fillColor:C.coral,fillOpacity:1,color:'white',weight:2.5}).addTo(leafMap)
+       .bindTooltip(`Current: mile ${fmt(mile)}`,{direction:'top',offset:[0,-12]});
+      const bounds=L.latLngBounds([[32.59,-116.47],[cur.lat,cur.lng]]);
+      leafMap.fitBounds(bounds.pad(0.2));
+    }
+  });
+}
+
+// --- Body & Mind ---
+function renderBodyMind(el){
+  const GOOD=[
+    {k:'enjoyment',l:'Enjoyment',c:C.teal},{k:'accomplishment',l:'Accomplishment',c:C.green},
+    {k:'natural beauty',l:'Beauty',c:C.blue},{k:'social interaction',l:'Social',c:C.tealLt},
+  ];
+  const WATCH=[
+    {k:'difficulty',l:'Difficulty',c:C.coral},{k:'hunger level',l:'Hunger',c:C.amber},
+    {k:'soreness',l:'Soreness',c:C.pink},{k:'injury level',l:'Injury',c:C.red},
+    {k:'lonelyness',l:'Loneliness',c:C.purple},
+  ];
+  const ALL=[...GOOD,...WATCH];
+
+  const cData=mainData.map(d=>{
+    const o={date:sd(d.date)};
+    ALL.forEach(f=>{
+      // Handle trailing spaces in column names
+      o[f.l]=num(d[f.k])||num(d[f.k+' ']);
+    });
+    return o;
+  }).filter(d=>ALL.some(f=>d[f.l]!=null));
+
+  const last=cData[cData.length-1];
+  const avgs=ALL.map(f=>{const v=cData.map(d=>d[f.l]).filter(x=>x!=null);return{...f,avg:v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*10)/10:0,vals:v}});
+
+  // Build sparkline SVGs inline
+  function sparkSvg(vals,color){
+    if(vals.length<2) return '';
+    const w=60,h=18,pad=1;
+    const mn=0,mx=10;
+    const pts=vals.map((v,i)=>{
+      const x=pad+(i/(vals.length-1))*(w-2*pad);
+      const y=h-pad-((v-mn)/(mx-mn))*(h-2*pad);
+      return`${x},${y}`;
+    }).join(' ');
+    return`<svg width="${w}" height="${h}" style="vertical-align:middle;margin-left:6px"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  }
+
+  function barRow(f,val,avg,vals,isWatch){
+    const pctVal=val!=null?(val/10*100):0;
+    const pctAvg=avg>0?(avg/10*100):0;
+    const barBg=isWatch?'var(--bd2)':'var(--bd2)';
+    const valDisplay=val!=null?val:'—';
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:.78rem;color:var(--tx2);display:flex;align-items:center;gap:4px">
+          <span style="width:8px;height:8px;border-radius:2px;background:${f.c};display:inline-block"></span>${f.l}
+        </span>
+        <span style="font-size:.78rem;display:flex;align-items:center">
+          <span style="font-weight:500;color:var(--tx)">${valDisplay}</span>
+          <span style="color:var(--tx3);margin-left:6px">avg ${avg}</span>
+          ${sparkSvg(vals,f.c)}
+        </span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:${barBg};position:relative;overflow:visible">
+        ${val!=null?`<div style="height:100%;width:${pctVal}%;border-radius:3px;background:${f.c};opacity:.7;transition:width .4s"></div>`:''}
+        ${avg>0?`<div style="position:absolute;left:${pctAvg}%;top:-2px;width:2px;height:10px;background:var(--tx3);border-radius:1px" title="Trip avg: ${avg}"></div>`:''}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML=`
+    <div class="section">Latest day${last?` — ${last.date}`:''}</div>
+    <div style="margin-bottom:6px;font-size:.72rem;color:var(--tx3)">Bar = today's value · Tick mark = trip average · Sparkline = trend</div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:.72rem;font-weight:500;color:${C.teal};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Good vibes</div>
+      ${avgs.filter(a=>GOOD.some(g=>g.k===a.k)).map(a=>barRow(a,last?last[a.l]:null,a.avg,a.vals,false)).join('')}
+      <div style="font-size:.72rem;font-weight:500;color:${C.coral};text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px">Watch list</div>
+      ${avgs.filter(a=>WATCH.some(w=>w.k===a.k)).map(a=>barRow(a,last?last[a.l]:null,a.avg,a.vals,true)).join('')}
+    </div>
+    <div class="chart-label">Trends over time <span style="font-size:.68rem;color:var(--tx3);font-weight:400">— click a metric to highlight</span></div>
+    <div id="bm-legend" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div class="chart-wrap" style="height:300px"><canvas id="ch-trends"></canvas></div>`;
+
+  // Build interactive chart with clickable legend
+  if(cData.length){
+    const datasets=ALL.map(f=>({
+      label:f.l,data:cData.map(d=>d[f.l]),borderColor:f.c,
+      borderWidth:2,pointRadius:0,tension:.3,spanGaps:true,
+    }));
+
+    const trendsChart=new Chart(document.getElementById('ch-trends'),{
+      type:'line',
+      data:{labels:cData.map(d=>d.date),datasets},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+        scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
+          y:{min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}},
+        interaction:{mode:'index',intersect:false},
+      }
+    });
+    charts.push(trendsChart);
+
+    // Clickable legend
+    const legendEl=document.getElementById('bm-legend');
+    let activeIdx=null;
+
+    function renderLegend(){
+      legendEl.innerHTML=ALL.map((f,i)=>{
+        const isActive=activeIdx===null||activeIdx===i;
+        const opacity=isActive?1:0.25;
+        return`<button onclick="window._bmToggle(${i})" style="
+          display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;
+          border:1px solid ${isActive?f.c:'var(--bd2)'};cursor:pointer;font-family:var(--font);
+          font-size:.72rem;background:${activeIdx===i?f.c+'18':'transparent'};
+          color:${isActive?'var(--tx)':'var(--tx3)'};opacity:${opacity};transition:.15s;
+          font-weight:${activeIdx===i?'500':'400'};
+        "><span style="width:8px;height:8px;border-radius:50%;background:${f.c};display:inline-block"></span>${f.l}</button>`;
+      }).join('');
+    }
+
+    window._bmToggle=function(idx){
+      if(activeIdx===idx) activeIdx=null; else activeIdx=idx;
+      trendsChart.data.datasets.forEach((ds,i)=>{
+        if(activeIdx===null){
+          ds.borderWidth=2;ds.borderColor=ALL[i].c;ds.pointRadius=0;
+        } else if(i===activeIdx){
+          ds.borderWidth=3;ds.borderColor=ALL[i].c;ds.pointRadius=3;
+        } else {
+          ds.borderWidth=1;ds.borderColor=ALL[i].c+'30';ds.pointRadius=0;
+        }
+      });
+      trendsChart.update();
+      renderLegend();
+    };
+    renderLegend();
+  }
+}
+
+// --- Stats ---
+function renderStats(el){
+  const cData=mainData.map((d,i)=>{
+    const prevMile=i>0?num(mainData[i-1]['end mile marker'])||0:0;
+    const curMile=num(d['end mile marker'])||0;
+    const steps=num(d.steps);
+    const waters=num(d['waters crossed']);
+    const breaks=num(d['number of major breaks']);
+    const startTime=d['hiking start time']||'';
+    const stopTime=d['hiking stop time']||'';
+    const wakeTime=d['wake up']||d['wake up ']||'';
+    const sleepTime=d['sleep time']||'';
+    const hunger=num(d['hunger level']);
+    const lodging=d.lodging||'';
+    return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,startTime,stopTime,wakeTime,sleepTime,hunger,lodging};
+  });
+
+  const totalSteps=cData.reduce((s,d)=>s+(d.steps||0),0);
+  const totalWaters=cData.reduce((s,d)=>s+(d.waters||0),0);
+  const totalBreaks=cData.reduce((s,d)=>s+(d.breaks||0),0);
+  const daysWithSteps=cData.filter(d=>d.steps!=null);
+  const avgSteps=daysWithSteps.length?Math.round(totalSteps/daysWithSteps.length):0;
+  const daysWithHunger=cData.map(d=>d.hunger).filter(x=>x!=null);
+  const avgHunger=daysWithHunger.length?Math.round(daysWithHunger.reduce((a,b)=>a+b,0)/daysWithHunger.length*10)/10:0;
+
+  // Steps per mile (efficiency)
+  const stepsPerMile=daysWithSteps.filter(d=>d.daily>0).map(d=>({date:d.date,spm:Math.round((d.steps||0)/d.daily)}));
+
+  el.innerHTML=`
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Total steps</div><div class="metric-val" style="color:${C.teal}">${totalSteps>0?fmt(totalSteps):'—'}</div></div>
+      <div class="metric"><div class="metric-label">Avg steps/day</div><div class="metric-val" style="color:${C.blue}">${avgSteps>0?fmt(avgSteps):'—'}</div></div>
+      <div class="metric"><div class="metric-label">Water crossings</div><div class="metric-val" style="color:${C.purple}">${totalWaters>0?fmt(totalWaters):'—'}</div></div>
+      <div class="metric"><div class="metric-label">Avg hunger</div><div class="metric-val" style="color:${C.amber}">${avgHunger>0?avgHunger+'/10':'—'}</div></div>
+    </div>
+    <div class="chart-label">Daily steps</div>
+    <div class="chart-wrap" style="height:200px"><canvas id="ch-steps"></canvas></div>
+    <div class="chart-label">Hunger level over time</div>
+    <div class="chart-wrap" style="height:180px"><canvas id="ch-hunger"></canvas></div>
+    ${stepsPerMile.length>1?`<div class="chart-label">Steps per mile (effort/terrain)</div><div class="chart-wrap" style="height:180px"><canvas id="ch-spm"></canvas></div>`:''}
+    <div class="section">Daily log</div>
+    ${cData.slice().reverse().slice(0,14).map(d=>`<div class="log-row" style="flex-wrap:wrap;gap:6px">
+      <span class="date">${d.date}</span>
+      ${d.daily>0?`<span style="color:${C.teal};font-weight:500">${d.daily} mi</span>`:''}
+      ${d.steps!=null?`<span style="color:var(--tx2)">${fmt(d.steps)} steps</span>`:''}
+      ${d.waters!=null&&d.waters>0?`<span style="color:${C.blue}">${d.waters} water</span>`:''}
+      ${d.breaks!=null?`<span style="color:var(--tx3)">${d.breaks} breaks</span>`:''}
+      ${d.hunger!=null?`<span style="color:${C.amber}">hunger ${d.hunger}</span>`:''}
+      ${d.lodging?`<span style="color:var(--tx3)">${escHtml(d.lodging)}</span>`:''}
+    </div>`).join('')}`;
+
+  const stepsData=cData.filter(d=>d.steps!=null);
+  if(stepsData.length){
+    charts.push(new Chart(document.getElementById('ch-steps'),{type:'bar',data:{labels:stepsData.map(d=>d.date),datasets:[{label:'Steps',data:stepsData.map(d=>d.steps),backgroundColor:C.teal,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
+  }
+
+  const hungerData=cData.filter(d=>d.hunger!=null);
+  if(hungerData.length){
+    charts.push(new Chart(document.getElementById('ch-hunger'),{type:'line',data:{labels:hungerData.map(d=>d.date),datasets:[{label:'Hunger',data:hungerData.map(d=>d.hunger),borderColor:C.amber,backgroundColor:C.amberBg+'80',fill:true,tension:.3,pointRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
+  }
+
+  if(stepsPerMile.length>1){
+    charts.push(new Chart(document.getElementById('ch-spm'),{type:'line',data:{labels:stepsPerMile.map(d=>d.date),datasets:[{label:'Steps/mile',data:stepsPerMile.map(d=>d.spm),borderColor:C.green,borderWidth:2,tension:.3,pointRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
+  }
+}
+
+// --- Weather ---
+function renderWeather(el){
+  const cData=mainData.map(d=>({date:sd(d.date),high:num(d['day high temp']),low:num(d['night low temp']),weather:d.weather||'',precip:d['overnight precipitation']||''})).filter(d=>d.high!=null||d.low!=null);
+  el.innerHTML=`
+    <div class="chart-label">Temperature range</div>
+    <div class="chart-wrap" style="height:240px"><canvas id="ch-temp"></canvas></div>
+    <div class="legend"><span><span class="leg-ln" style="background:${C.coral}"></span>Day high</span><span><span class="leg-ln" style="background:${C.blue}"></span>Night low</span></div>
+    <div class="section">Weather log</div>
+    ${cData.slice(-14).reverse().map(d=>`<div class="log-row"><span class="date">${d.date}</span><span style="color:${C.coral};min-width:36px">${d.high!=null?Math.round(d.high)+'°':''}</span><span style="color:${C.blue};min-width:36px">${d.low!=null?Math.round(d.low)+'°':''}</span><span style="color:var(--tx2);flex:1">${d.weather}</span>${d.precip?`<span style="color:${C.blue};font-size:.72rem">${d.precip}</span>`:''}</div>`).join('')}`;
+
+  charts.push(new Chart(document.getElementById('ch-temp'),{type:'line',data:{labels:cData.map(d=>d.date),datasets:[{label:'Day high',data:cData.map(d=>d.high),borderColor:C.coral,backgroundColor:C.coralBg+'80',fill:true,tension:.3,pointRadius:2},{label:'Night low',data:cData.map(d=>d.low),borderColor:C.blue,borderWidth:2,tension:.3,pointRadius:2,fill:false}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor(),callback:v=>v+'°'},grid:{color:gridColor()}}}}}));
+}
+
+// --- Towns ---
+function renderTowns(el){
+  if(!townData.length){el.innerHTML='<div class="center-msg">No town data yet</div>';return}
+  const towns=townData.map(t=>({name:t['town name']||'Unknown',entered:t['date entered town'],left:t['date left town'],mile:num(t['left the trail at mile marker'])||num(t['left the trail at mile marker ']),grocery:num(t['grocery bill']),meals:num(t['# meals at restaurant']),restaurant:t['restruant name(s)']||t['restaurant name(s)']||'',charged:t['charged']||t['charged ']||'',distance:t['distance from trail to town']||''}));
+  const totalG=towns.reduce((s,t)=>s+(t.grocery||0),0),totalM=towns.reduce((s,t)=>s+(t.meals||0),0);
+  const totalFood=totalG+totalM*15;
+  const spend=towns.filter(t=>t.grocery!=null||t.meals!=null);
+
+  // Food/restaurant highlight
+  const allRestaurants=towns.filter(t=>t.restaurant).map(t=>({town:t.name,restaurants:t.restaurant,meals:t.meals,mile:t.mile}));
+
+  el.innerHTML=`
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Towns visited</div><div class="metric-val" style="color:${C.purple}">${towns.length}</div></div>
+      <div class="metric"><div class="metric-label">Grocery spending</div><div class="metric-val" style="color:${C.teal}">$${fmt(totalG)}</div></div>
+      <div class="metric"><div class="metric-label">Restaurant meals</div><div class="metric-val" style="color:${C.coral}">${totalM}</div></div>
+      <div class="metric"><div class="metric-label">Est. total food</div><div class="metric-val" style="color:${C.amber}">$${fmt(totalFood)}</div><div class="metric-sub">~$15/meal est.</div></div>
+    </div>
+    ${spend.length?`<div class="chart-label">Spending by town</div><div class="chart-wrap" style="height:${Math.max(160,spend.length*42+50)}px"><canvas id="ch-spend"></canvas></div><div class="legend"><span><span class="leg-sq" style="background:${C.teal}"></span>Groceries</span><span><span class="leg-sq" style="background:${C.coral}"></span>Est. dining (~$15/meal)</span></div>`:''}
+    ${allRestaurants.length?`<div class="section">Food log</div>${allRestaurants.map(r=>`<div class="town-card">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <span style="font-weight:500;font-size:.88rem">${escHtml(r.town)}</span>
+        ${r.mile!=null?`<span class="town-mile">mi ${fmt(r.mile)}</span>`:''}
+      </div>
+      <div style="font-size:.82rem;color:${C.coral};margin-top:3px">${escHtml(r.restaurants)}</div>
+      ${r.meals?`<div style="font-size:.72rem;color:var(--tx3);margin-top:2px">${r.meals} meal${r.meals>1?'s':''}</div>`:''}
+    </div>`).join('')}`:''}
+    <div class="section">Town log</div>
+    ${towns.map(t=>{
+      const det=[t.entered&&`In: ${sd(t.entered)}`,t.left&&`Out: ${sd(t.left)}`,t.grocery&&`Grocery: $${fmt(t.grocery)}`,t.meals&&`${t.meals} meal${t.meals>1?'s':''} out`,t.distance&&`${t.distance} from trail`,t.charged&&t.charged.toLowerCase()!=='no'&&t.charged.trim()!=='0'&&t.charged.trim()!==''?'Charged devices':null].filter(Boolean).join('  ·  ');
+      return`<div class="town-card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="town-name">${escHtml(t.name)}</span>${t.mile?`<span class="town-mile">mi ${fmt(t.mile)}</span>`:''}</div>${det?`<div class="town-detail">${det}</div>`:''}${t.restaurant?`<div class="town-rest">${escHtml(t.restaurant)}</div>`:''}</div>`}).join('')}`;
+
+  if(spend.length){charts.push(new Chart(document.getElementById('ch-spend'),{type:'bar',data:{labels:spend.map(t=>t.name),datasets:[{label:'Groceries',data:spend.map(t=>t.grocery||0),backgroundColor:C.teal},{label:'Est. dining',data:spend.map(t=>(t.meals||0)*15),backgroundColor:C.coral}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{font:{size:10},color:tickColor(),callback:v=>'$'+v},grid:{color:gridColor()}},y:{stacked:true,ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));}
+}
+
+// --- Social ---
+function renderSocial(el){
+  const cData=mainData.map(d=>({date:sd(d.date),people:num(d['number of people at camp']),social:num(d['social interaction'])||num(d['social interaction ']),lonely:num(d['lonelyness']),pctAlone:num(d['percent hiked alone'])})).filter(d=>d.people!=null||d.social!=null||d.lonely!=null);
+
+  // Trail magic log
+  const magicDays=mainData.filter(d=>d['trail magic']&&d['trail magic'].toLowerCase()!=='no'&&d['trail magic'].trim()!=='0'&&d['trail magic'].trim()!=='');
+  const avgP=(()=>{const v=cData.map(d=>d.people).filter(x=>x!=null);return v.length?fmt(v.reduce((a,b)=>a+b,0)/v.length,1):'—'})();
+  const avgSocial=(()=>{const v=cData.map(d=>d.social).filter(x=>x!=null);return v.length?fmt(v.reduce((a,b)=>a+b,0)/v.length,1):'—'})();
+  const avgLonely=(()=>{const v=cData.map(d=>d.lonely).filter(x=>x!=null);return v.length?fmt(v.reduce((a,b)=>a+b,0)/v.length,1):'—'})();
+
+  // Max people for chart scale
+  const maxPeople=Math.max(10,...cData.map(d=>d.people||0).filter(x=>x!=null));
+
+  // Trail magic details
+  let magicHtml='';
+  if(magicDays.length){
+    magicHtml=`<div class="section">Trail magic log</div>${magicDays.map(d=>{
+      const tm=d['trail magic'];
+      const mi=num(d['end mile marker']);
+      return `<div class="town-card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:500;font-size:.88rem">${sd(d.date)}</span>${mi!=null?`<span class="town-mile">mi ${fmt(mi)}</span>`:''}</div><div class="town-detail" style="color:${C.amber}">${escHtml(typeof tm==='string'?tm:'Trail magic!')}</div></div>`;
+    }).join('')}`;
+  }
+
+  el.innerHTML=`
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Trail magic days</div><div class="metric-val" style="color:${C.amber}">${magicDays.length}</div></div>
+      <div class="metric"><div class="metric-label">Avg people at camp</div><div class="metric-val" style="color:${C.purple}">${avgP}</div></div>
+      <div class="metric"><div class="metric-label">Avg social</div><div class="metric-val" style="color:${C.teal}">${avgSocial}</div><div class="metric-sub">out of 10</div></div>
+      <div class="metric"><div class="metric-label">Avg loneliness</div><div class="metric-val" style="color:${C.purple}">${avgLonely}</div><div class="metric-sub">out of 10</div></div>
+    </div>
+    <div class="chart-label">Social interaction vs loneliness</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="ch-soc1"></canvas></div>
+    <div class="legend"><span><span class="leg-ln" style="background:${C.teal}"></span>Social interaction</span><span><span class="leg-ln" style="background:${C.purple}"></span>Loneliness</span></div>
+    <div class="chart-label">People at camp & % hiked alone</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="ch-soc2"></canvas></div>
+    <div class="legend"><span><span class="leg-sq" style="background:${C.purpleLt}"></span>People at camp</span><span><span class="leg-ln" style="background:${C.gray}"></span>% hiked alone</span></div>
+    ${magicHtml}`;
+
+  // Social vs lonely on same 0-10 scale
+  charts.push(new Chart(document.getElementById('ch-soc1'),{type:'line',data:{labels:cData.map(d=>d.date),datasets:[
+    {label:'Social interaction',data:cData.map(d=>d.social),borderColor:C.teal,borderWidth:2,pointRadius:2,tension:.3,spanGaps:true},
+    {label:'Loneliness',data:cData.map(d=>d.lonely),borderColor:C.purple,borderWidth:2,pointRadius:2,tension:.3,spanGaps:true},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
+
+  // People at camp (bar, left axis) + % alone (line, right axis)
+  charts.push(new Chart(document.getElementById('ch-soc2'),{type:'bar',data:{labels:cData.map(d=>d.date),datasets:[
+    {type:'bar',label:'People at camp',data:cData.map(d=>d.people),backgroundColor:C.purpleLt,borderRadius:4,yAxisID:'y',order:2},
+    {type:'line',label:'% hiked alone',data:cData.map(d=>d.pctAlone),borderColor:C.gray,borderWidth:2,pointRadius:0,tension:.3,spanGaps:true,yAxisID:'y1',order:1},
+  ]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+    scales:{
+      x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
+      y:{position:'left',min:0,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()},title:{display:true,text:'People',font:{size:10},color:tickColor()}},
+      y1:{position:'right',min:0,max:100,ticks:{font:{size:10},color:tickColor(),callback:v=>v+'%'},grid:{display:false},title:{display:true,text:'% alone',font:{size:10},color:tickColor()}}
+    }}}));
+}
+
+// --- Weather (Open-Meteo, free, no key) ---
+const WMO_CODES={0:'Clear sky',1:'Mainly clear',2:'Partly cloudy',3:'Overcast',
+  45:'Foggy',48:'Rime fog',51:'Light drizzle',53:'Drizzle',55:'Heavy drizzle',
+  56:'Freezing drizzle',57:'Heavy freezing drizzle',
+  61:'Light rain',63:'Rain',65:'Heavy rain',66:'Freezing rain',67:'Heavy freezing rain',
+  71:'Light snow',73:'Snow',75:'Heavy snow',77:'Snow grains',
+  80:'Light showers',81:'Showers',82:'Heavy showers',
+  85:'Light snow showers',86:'Heavy snow showers',
+  95:'Thunderstorm',96:'Thunderstorm w/ hail',99:'Thunderstorm w/ heavy hail'};
+
+function wxIcon(code,isDay){
+  if(code<=1) return isDay?'☀️':'🌙';
+  if(code<=3) return isDay?'⛅':'☁️';
+  if(code<=48) return '🌫️';
+  if(code<=57) return '🌧️';
+  if(code<=67) return '🌧️';
+  if(code<=77) return '❄️';
+  if(code<=82) return '🌦️';
+  if(code<=86) return '🌨️';
+  return '⛈️';
+}
+
+function wxDayIcon(code){
+  if(code<=1) return '☀️';
+  if(code<=3) return '⛅';
+  if(code<=48) return '🌫️';
+  if(code<=57) return '🌧️';
+  if(code<=67) return '🌧️';
+  if(code<=77) return '❄️';
+  if(code<=82) return '🌦️';
+  if(code<=86) return '🌨️';
+  return '⛈️';
+}
+
+function nearestLandmark(mile){
+  let best=LANDMARKS[0];
+  for(const lm of LANDMARKS){if(Math.abs(lm.m-mile)<Math.abs(best.m-mile))best=lm;}
+  return best;
+}
+
+async function fetchTrailWeather(mile){
+  const el=document.getElementById('wx-container');
+  if(!el||mile<=0){if(el)el.innerHTML='';return;}
+
+  const pos=getMilePos(mile);
+  const lm=nearestLandmark(mile);
+  const lat=pos.lat.toFixed(2),lng=pos.lng.toFixed(2);
+
+  try{
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,is_day&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,sunrise,sunset&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=America%2FLos_Angeles&forecast_days=4`;
+    const r=await fetch(url);
+    if(!r.ok) throw new Error(r.status);
+    const w=await r.json();
+    const cur=w.current;
+    const daily=w.daily;
+
+    const dayNames=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let forecastHtml='';
+    // skip today (index 0), show next 3 days
+    for(let i=1;i<Math.min(4,daily.time.length);i++){
+      const d=new Date(daily.time[i]+'T12:00:00');
+      const dn=dayNames[d.getDay()];
+      const hi=Math.round(daily.temperature_2m_max[i]);
+      const lo=Math.round(daily.temperature_2m_min[i]);
+      const code=daily.weather_code[i];
+      const precip=daily.precipitation_probability_max[i];
+      forecastHtml+=`<div class="wx-day">
+        <div class="wx-day-name">${dn}</div>
+        <div class="wx-day-icon">${wxDayIcon(code)}</div>
+        <div class="wx-day-temps"><span class="wx-day-hi">${hi}°</span> <span class="wx-day-lo">${lo}°</span></div>
+        ${precip>10?`<div class="wx-day-precip">${precip}% rain</div>`:''}
+      </div>`;
+    }
+
+    const temp=Math.round(cur.temperature_2m);
+    const feels=Math.round(cur.apparent_temperature);
+    const code=cur.weather_code;
+    const isDay=cur.is_day;
+    const wind=Math.round(cur.wind_speed_10m);
+    const gusts=Math.round(cur.wind_gusts_10m);
+    const humidity=Math.round(cur.relative_humidity_2m);
+    const desc=WMO_CODES[code]||'';
+
+    el.innerHTML=`<div class="wx-card">
+      <div class="wx-header">
+        <span class="wx-title">Trail weather now</span>
+        <span class="wx-loc">Near ${escHtml(lm.l)} · mi ${fmt(mile)}</span>
+      </div>
+      <div class="wx-now">
+        <div class="wx-icon">${wxIcon(code,isDay)}</div>
+        <div>
+          <div class="wx-temp">${temp}°F</div>
+          <div class="wx-desc">${desc}</div>
+        </div>
+      </div>
+      <div class="wx-details">
+        <span>Feels like ${feels}°</span>
+        <span>Wind ${wind} mph${gusts>wind+5?' (gusts '+gusts+')':''}</span>
+        <span>Humidity ${humidity}%</span>
+        ${cur.precipitation>0?`<span>Precip ${cur.precipitation}"</span>`:''}
+      </div>
+      <div class="wx-forecast">${forecastHtml}</div>
+    </div>`;
+  }catch(e){
+    console.warn('Weather fetch failed',e);
+    el.innerHTML='';
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
