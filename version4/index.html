@@ -129,6 +129,7 @@
   .wx-loading { font-size: .78rem; color: var(--tx3); padding: 8px 0; }
 
 </style>
+<script data-goatcounter="https://pct2026.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -659,6 +660,28 @@ function renderBodyMind(el){
 }
 
 // --- Stats ---
+function parseTime(str){
+  // Parse time strings like "6:30", "6:30 AM", "18:30", "6:30am"
+  if(!str) return null;
+  str=str.trim().toLowerCase().replace(/\s+/g,'');
+  let m=str.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/);
+  if(!m) return null;
+  let h=parseInt(m[1]),min=parseInt(m[2]||'0');
+  if(m[3]==='pm'&&h<12) h+=12;
+  if(m[3]==='am'&&h===12) h=0;
+  if(h>23||min>59) return null;
+  return h+min/60; // decimal hours
+}
+
+function fmtTime(dec){
+  if(dec==null) return '—';
+  let h=Math.floor(dec),m=Math.round((dec-h)*60);
+  if(m===60){h++;m=0;}
+  const ampm=h>=12?'PM':'AM';
+  const h12=h===0?12:h>12?h-12:h;
+  return `${h12}:${m.toString().padStart(2,'0')} ${ampm}`;
+}
+
 function renderStats(el){
   const cData=mainData.map((d,i)=>{
     const prevMile=i>0?num(mainData[i-1]['end mile marker'])||0:0;
@@ -666,25 +689,52 @@ function renderStats(el){
     const steps=num(d.steps);
     const waters=num(d['waters crossed']);
     const breaks=num(d['number of major breaks']);
-    const startTime=d['hiking start time']||'';
-    const stopTime=d['hiking stop time']||'';
-    const wakeTime=d['wake up']||d['wake up ']||'';
-    const sleepTime=d['sleep time']||'';
+    const startTime=parseTime(d['hiking start time']||'');
+    const stopTime=parseTime(d['hiking stop time']||'');
+    const wakeTime=parseTime(d['wake up']||d['wake up ']||'');
+    const sleepTime=parseTime(d['sleep time']||'');
     const hunger=num(d['hunger level']);
     const lodging=d.lodging||'';
-    return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,startTime,stopTime,wakeTime,sleepTime,hunger,lodging};
+    // Hiking hours
+    let hikingHours=null;
+    if(startTime!=null&&stopTime!=null&&stopTime>startTime) hikingHours=Math.round((stopTime-startTime)*10)/10;
+    // Sleep hours
+    let sleepHours=null;
+    if(sleepTime!=null&&wakeTime!=null){
+      // Sleep is usually evening→morning, so add 24 if wake < sleep
+      let diff=wakeTime-sleepTime;
+      if(diff<0) diff+=24;
+      if(diff>0&&diff<16) sleepHours=Math.round(diff*10)/10;
+    }
+    return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,
+      startTime,stopTime,wakeTime,sleepTime,hikingHours,sleepHours,hunger,lodging,
+      startRaw:d['hiking start time']||'',stopRaw:d['hiking stop time']||'',
+      wakeRaw:d['wake up']||d['wake up ']||'',sleepRaw:d['sleep time']||''};
   });
 
   const totalSteps=cData.reduce((s,d)=>s+(d.steps||0),0);
   const totalWaters=cData.reduce((s,d)=>s+(d.waters||0),0);
-  const totalBreaks=cData.reduce((s,d)=>s+(d.breaks||0),0);
   const daysWithSteps=cData.filter(d=>d.steps!=null);
   const avgSteps=daysWithSteps.length?Math.round(totalSteps/daysWithSteps.length):0;
   const daysWithHunger=cData.map(d=>d.hunger).filter(x=>x!=null);
   const avgHunger=daysWithHunger.length?Math.round(daysWithHunger.reduce((a,b)=>a+b,0)/daysWithHunger.length*10)/10:0;
 
-  // Steps per mile (efficiency)
+  const daysWithHiking=cData.filter(d=>d.hikingHours!=null);
+  const avgHiking=daysWithHiking.length?Math.round(daysWithHiking.reduce((s,d)=>s+d.hikingHours,0)/daysWithHiking.length*10)/10:null;
+  const daysWithSleep=cData.filter(d=>d.sleepHours!=null);
+  const avgSleep=daysWithSleep.length?Math.round(daysWithSleep.reduce((s,d)=>s+d.sleepHours,0)/daysWithSleep.length*10)/10:null;
+  const avgWake=cData.filter(d=>d.wakeTime!=null);
+  const avgWakeTime=avgWake.length?avgWake.reduce((s,d)=>s+d.wakeTime,0)/avgWake.length:null;
+  const avgSleepTime=cData.filter(d=>d.sleepTime!=null);
+  const avgBedtime=avgSleepTime.length?avgSleepTime.reduce((s,d)=>s+d.sleepTime,0)/avgSleepTime.length:null;
+
+  // Steps per mile
   const stepsPerMile=daysWithSteps.filter(d=>d.daily>0).map(d=>({date:d.date,spm:Math.round((d.steps||0)/d.daily)}));
+
+  // Lodging breakdown
+  const lodgingCounts={};
+  cData.forEach(d=>{if(d.lodging){const k=d.lodging.toLowerCase().trim();lodgingCounts[k]=(lodgingCounts[k]||0)+1;}});
+  const lodgingEntries=Object.entries(lodgingCounts).sort((a,b)=>b[1]-a[1]);
 
   el.innerHTML=`
     <div class="metrics">
@@ -693,21 +743,62 @@ function renderStats(el){
       <div class="metric"><div class="metric-label">Water crossings</div><div class="metric-val" style="color:${C.purple}">${totalWaters>0?fmt(totalWaters):'—'}</div></div>
       <div class="metric"><div class="metric-label">Avg hunger</div><div class="metric-val" style="color:${C.amber}">${avgHunger>0?avgHunger+'/10':'—'}</div></div>
     </div>
+
+    <div class="section">Sleep & schedule</div>
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Avg wake up</div><div class="metric-val" style="color:${C.amber};font-size:1.1rem">${fmtTime(avgWakeTime)}</div></div>
+      <div class="metric"><div class="metric-label">Avg bedtime</div><div class="metric-val" style="color:${C.purple};font-size:1.1rem">${fmtTime(avgBedtime)}</div></div>
+      <div class="metric"><div class="metric-label">Avg sleep</div><div class="metric-val" style="color:${C.blue}">${avgSleep!=null?avgSleep+'h':'—'}</div></div>
+      <div class="metric"><div class="metric-label">Avg hiking</div><div class="metric-val" style="color:${C.teal}">${avgHiking!=null?avgHiking+'h':'—'}</div></div>
+    </div>
+
+    ${daysWithSleep.length>1||daysWithHiking.length>1?`
+    <div class="chart-label">Daily schedule</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="ch-schedule"></canvas></div>
+    <div class="legend">
+      <span><span class="leg-sq" style="background:${C.blue}"></span>Sleep hours</span>
+      <span><span class="leg-sq" style="background:${C.teal}"></span>Hiking hours</span>
+    </div>`:''}
+
     <div class="chart-label">Daily steps</div>
     <div class="chart-wrap" style="height:200px"><canvas id="ch-steps"></canvas></div>
     <div class="chart-label">Hunger level over time</div>
     <div class="chart-wrap" style="height:180px"><canvas id="ch-hunger"></canvas></div>
     ${stepsPerMile.length>1?`<div class="chart-label">Steps per mile (effort/terrain)</div><div class="chart-wrap" style="height:180px"><canvas id="ch-spm"></canvas></div>`:''}
+
+    ${lodgingEntries.length?`<div class="section">Lodging breakdown</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+      ${lodgingEntries.map(([k,v])=>`<div class="avg-pill"><span style="font-weight:500">${v}</span><span style="color:var(--tx2)">${k}</span></div>`).join('')}
+    </div>`:''}
+
     <div class="section">Daily log</div>
     ${cData.slice().reverse().slice(0,14).map(d=>`<div class="log-row" style="flex-wrap:wrap;gap:6px">
       <span class="date">${d.date}</span>
       ${d.daily>0?`<span style="color:${C.teal};font-weight:500">${d.daily} mi</span>`:''}
       ${d.steps!=null?`<span style="color:var(--tx2)">${fmt(d.steps)} steps</span>`:''}
+      ${d.hikingHours!=null?`<span style="color:${C.teal}">${d.hikingHours}h hiking</span>`:''}
+      ${d.sleepHours!=null?`<span style="color:${C.blue}">${d.sleepHours}h sleep</span>`:''}
+      ${d.wakeRaw?`<span style="color:${C.amber}">🌅 ${escHtml(d.wakeRaw)}</span>`:''}
+      ${d.sleepRaw?`<span style="color:${C.purple}">🌙 ${escHtml(d.sleepRaw)}</span>`:''}
       ${d.waters!=null&&d.waters>0?`<span style="color:${C.blue}">${d.waters} water</span>`:''}
       ${d.breaks!=null?`<span style="color:var(--tx3)">${d.breaks} breaks</span>`:''}
       ${d.hunger!=null?`<span style="color:${C.amber}">hunger ${d.hunger}</span>`:''}
       ${d.lodging?`<span style="color:var(--tx3)">${escHtml(d.lodging)}</span>`:''}
     </div>`).join('')}`;
+
+  // Schedule chart — sleep and hiking hours side by side
+  const schedData=cData.filter(d=>d.sleepHours!=null||d.hikingHours!=null);
+  if(schedData.length>1&&document.getElementById('ch-schedule')){
+    charts.push(new Chart(document.getElementById('ch-schedule'),{type:'bar',data:{
+      labels:schedData.map(d=>d.date),
+      datasets:[
+        {label:'Sleep hours',data:schedData.map(d=>d.sleepHours),backgroundColor:C.blue,borderRadius:4},
+        {label:'Hiking hours',data:schedData.map(d=>d.hikingHours),backgroundColor:C.teal,borderRadius:4},
+      ]
+    },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
+        y:{ticks:{font:{size:10},color:tickColor(),callback:v=>v+'h'},grid:{color:gridColor()}}}}}));
+  }
 
   const stepsData=cData.filter(d=>d.steps!=null);
   if(stepsData.length){
@@ -748,7 +839,7 @@ function renderTowns(el){
     charged:t['charged']||t['charged ']||'',
     distance:t['distance from trail to town']||'',
     foodRating:num(t['food rating'])||num(t['food rating '])||null,
-    townRating:num(t['town rating'])||num(t['town rating '])||null,
+    townRating:num(t['town rating'])||num(t['town rating '])||num(t['rating'])||num(t['rating '])||null,
   }));
   const totalG=towns.reduce((s,t)=>s+(t.grocery||0),0),totalM=towns.reduce((s,t)=>s+(t.meals||0),0);
   const totalFood=totalG+totalM*15;
