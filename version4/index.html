@@ -740,34 +740,140 @@ function renderWeather(el){
 // --- Towns ---
 function renderTowns(el){
   if(!townData.length){el.innerHTML='<div class="center-msg">No town data yet</div>';return}
-  const towns=townData.map(t=>({name:t['town name']||'Unknown',entered:t['date entered town'],left:t['date left town'],mile:num(t['left the trail at mile marker'])||num(t['left the trail at mile marker ']),grocery:num(t['grocery bill']),meals:num(t['# meals at restaurant']),restaurant:t['restruant name(s)']||t['restaurant name(s)']||'',charged:t['charged']||t['charged ']||'',distance:t['distance from trail to town']||''}));
+  const towns=townData.map(t=>({
+    name:t['town name']||'Unknown',entered:t['date entered town'],left:t['date left town'],
+    mile:num(t['left the trail at mile marker'])||num(t['left the trail at mile marker ']),
+    grocery:num(t['grocery bill']),meals:num(t['# meals at restaurant']),
+    restaurant:t['restruant name(s)']||t['restaurant name(s)']||'',
+    charged:t['charged']||t['charged ']||'',
+    distance:t['distance from trail to town']||'',
+    foodRating:num(t['food rating'])||num(t['food rating '])||null,
+    townRating:num(t['town rating'])||num(t['town rating '])||null,
+  }));
   const totalG=towns.reduce((s,t)=>s+(t.grocery||0),0),totalM=towns.reduce((s,t)=>s+(t.meals||0),0);
   const totalFood=totalG+totalM*15;
   const spend=towns.filter(t=>t.grocery!=null||t.meals!=null);
 
-  // Food/restaurant highlight
-  const allRestaurants=towns.filter(t=>t.restaurant).map(t=>({town:t.name,restaurants:t.restaurant,meals:t.meals,mile:t.mile}));
+  // Detect which rating columns exist
+  const hasFoodRatings=towns.some(t=>t.foodRating!=null);
+  const hasTownRatings=towns.some(t=>t.townRating!=null);
+  const foodRated=towns.filter(t=>t.foodRating!=null);
+  const townRated=towns.filter(t=>t.townRating!=null);
+  const avgFood=foodRated.length?Math.round(foodRated.reduce((s,t)=>s+t.foodRating,0)/foodRated.length*10)/10:null;
+  const avgTown=townRated.length?Math.round(townRated.reduce((s,t)=>s+t.townRating,0)/townRated.length*10)/10:null;
+  const bestFood=foodRated.length?foodRated.reduce((a,b)=>b.foodRating>a.foodRating?b:a):null;
+  const bestTown=townRated.length?townRated.reduce((a,b)=>b.townRating>a.townRating?b:a):null;
+
+  // Rating bar helper
+  function ratingBar(val,max,color,label){
+    if(val==null) return '';
+    const pct=Math.round(val/max*100);
+    return `<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+      ${label?`<span style="font-size:.68rem;color:var(--tx3);min-width:36px">${label}</span>`:''}
+      <div style="flex:1;height:6px;border-radius:3px;background:var(--bd2);overflow:hidden">
+        <div style="height:100%;width:${pct}%;border-radius:3px;background:${color}"></div>
+      </div>
+      <span style="font-size:.78rem;font-weight:500;color:${color};min-width:28px">${val}/10</span>
+    </div>`;
+  }
+
+  function ratingColor(val){
+    if(val>=8) return C.teal;
+    if(val>=6) return C.amber;
+    if(val>=4) return C.coral;
+    return C.red;
+  }
+
+  // Trophy banners
+  let trophyHtml='';
+  if(bestFood||bestTown){
+    trophyHtml+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">';
+    if(bestFood) trophyHtml+=`<div style="flex:1;min-width:200px;background:${C.coralBg};border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.4rem">🍽️</span>
+      <div>
+        <div style="font-size:.68rem;color:${C.coral};font-weight:500;text-transform:uppercase;letter-spacing:.04em">Best food</div>
+        <div style="font-size:.92rem;font-weight:500">${escHtml(bestFood.name)} — ${bestFood.foodRating}/10</div>
+        ${bestFood.restaurant?`<div style="font-size:.72rem;color:var(--tx2)">${escHtml(bestFood.restaurant)}</div>`:''}
+      </div>
+    </div>`;
+    if(bestTown) trophyHtml+=`<div style="flex:1;min-width:200px;background:${C.purpleBg};border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.4rem">🏆</span>
+      <div>
+        <div style="font-size:.68rem;color:${C.purple};font-weight:500;text-transform:uppercase;letter-spacing:.04em">Best town</div>
+        <div style="font-size:.92rem;font-weight:500">${escHtml(bestTown.name)} — ${bestTown.townRating}/10</div>
+      </div>
+    </div>`;
+    trophyHtml+='</div>';
+  }
+
+  // Chart section — side by side if both exist
+  const hasAnyRatings=foodRated.length>1||townRated.length>1;
+  let chartHtml='';
+  if(hasFoodRatings&&hasTownRatings&&foodRated.length>1&&townRated.length>1){
+    // Combined chart with both ratings
+    const allRated=towns.filter(t=>t.foodRating!=null||t.townRating!=null);
+    chartHtml=`<div class="chart-label">Town & food ratings</div>
+      <div class="chart-wrap" style="height:${Math.max(160,allRated.length*42+50)}px"><canvas id="ch-ratings"></canvas></div>
+      <div class="legend"><span><span class="leg-sq" style="background:${C.coral}"></span>Food</span><span><span class="leg-sq" style="background:${C.purple}"></span>Town</span></div>`;
+  } else if(foodRated.length>1){
+    chartHtml=`<div class="chart-label">Food ratings by town</div>
+      <div class="chart-wrap" style="height:${Math.max(140,foodRated.length*38+50)}px"><canvas id="ch-ratings"></canvas></div>`;
+  } else if(townRated.length>1){
+    chartHtml=`<div class="chart-label">Town ratings</div>
+      <div class="chart-wrap" style="height:${Math.max(140,townRated.length*38+50)}px"><canvas id="ch-ratings"></canvas></div>`;
+  }
 
   el.innerHTML=`
     <div class="metrics">
       <div class="metric"><div class="metric-label">Towns visited</div><div class="metric-val" style="color:${C.purple}">${towns.length}</div></div>
+      ${hasTownRatings?`<div class="metric"><div class="metric-label">Avg town rating</div><div class="metric-val" style="color:${C.purple}">${avgTown!=null?avgTown+'/10':'—'}</div></div>`:''}
+      ${hasFoodRatings?`<div class="metric"><div class="metric-label">Avg food rating</div><div class="metric-val" style="color:${C.coral}">${avgFood!=null?avgFood+'/10':'—'}</div></div>`:''}
       <div class="metric"><div class="metric-label">Grocery spending</div><div class="metric-val" style="color:${C.teal}">$${fmt(totalG)}</div></div>
-      <div class="metric"><div class="metric-label">Restaurant meals</div><div class="metric-val" style="color:${C.coral}">${totalM}</div></div>
-      <div class="metric"><div class="metric-label">Est. total food</div><div class="metric-val" style="color:${C.amber}">$${fmt(totalFood)}</div><div class="metric-sub">~$15/meal est.</div></div>
+      <div class="metric"><div class="metric-label">Est. total food</div><div class="metric-val" style="color:${C.amber}">$${fmt(totalFood)}</div><div class="metric-sub">${totalM} meals out</div></div>
     </div>
+    ${trophyHtml}
+    ${chartHtml}
     ${spend.length?`<div class="chart-label">Spending by town</div><div class="chart-wrap" style="height:${Math.max(160,spend.length*42+50)}px"><canvas id="ch-spend"></canvas></div><div class="legend"><span><span class="leg-sq" style="background:${C.teal}"></span>Groceries</span><span><span class="leg-sq" style="background:${C.coral}"></span>Est. dining (~$15/meal)</span></div>`:''}
-    ${allRestaurants.length?`<div class="section">Food log</div>${allRestaurants.map(r=>`<div class="town-card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-weight:500;font-size:.88rem">${escHtml(r.town)}</span>
-        ${r.mile!=null?`<span class="town-mile">mi ${fmt(r.mile)}</span>`:''}
-      </div>
-      <div style="font-size:.82rem;color:${C.coral};margin-top:3px">${escHtml(r.restaurants)}</div>
-      ${r.meals?`<div style="font-size:.72rem;color:var(--tx3);margin-top:2px">${r.meals} meal${r.meals>1?'s':''}</div>`:''}
-    </div>`).join('')}`:''}
-    <div class="section">Town log</div>
+    <div class="section">Town details</div>
     ${towns.map(t=>{
       const det=[t.entered&&`In: ${sd(t.entered)}`,t.left&&`Out: ${sd(t.left)}`,t.grocery&&`Grocery: $${fmt(t.grocery)}`,t.meals&&`${t.meals} meal${t.meals>1?'s':''} out`,t.distance&&`${t.distance} from trail`,t.charged&&t.charged.toLowerCase()!=='no'&&t.charged.trim()!=='0'&&t.charged.trim()!==''?'Charged devices':null].filter(Boolean).join('  ·  ');
-      return`<div class="town-card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="town-name">${escHtml(t.name)}</span>${t.mile?`<span class="town-mile">mi ${fmt(t.mile)}</span>`:''}</div>${det?`<div class="town-detail">${det}</div>`:''}${t.restaurant?`<div class="town-rest">${escHtml(t.restaurant)}</div>`:''}</div>`}).join('')}`;
+      const showBoth=hasFoodRatings&&hasTownRatings;
+      return`<div class="town-card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="town-name">${escHtml(t.name)}</span>
+          ${t.mile?`<span class="town-mile">mi ${fmt(t.mile)}</span>`:''}
+        </div>
+        ${det?`<div class="town-detail">${det}</div>`:''}
+        ${t.restaurant?`<div style="font-size:.82rem;color:${C.coral};margin-top:3px">${escHtml(t.restaurant)}</div>`:''}
+        ${ratingBar(t.townRating,10,C.purple,showBoth?'Town':'')}
+        ${ratingBar(t.foodRating,10,C.coral,showBoth?'Food':'')}
+      </div>`}).join('')}`;
+
+  // Ratings chart
+  if(document.getElementById('ch-ratings')){
+    if(hasFoodRatings&&hasTownRatings){
+      const allRated=towns.filter(t=>t.foodRating!=null||t.townRating!=null);
+      charts.push(new Chart(document.getElementById('ch-ratings'),{type:'bar',data:{
+        labels:allRated.map(t=>t.name),
+        datasets:[
+          {label:'Food',data:allRated.map(t=>t.foodRating),backgroundColor:C.coral,borderRadius:4},
+          {label:'Town',data:allRated.map(t=>t.townRating),backgroundColor:C.purple,borderRadius:4},
+        ]
+      },options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{min:0,max:10,ticks:{font:{size:10},color:tickColor(),stepSize:2},grid:{color:gridColor()}},
+          y:{ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));
+    } else {
+      const rated=foodRated.length?foodRated:townRated;
+      const key=foodRated.length?'foodRating':'townRating';
+      const label=foodRated.length?'Food rating':'Town rating';
+      charts.push(new Chart(document.getElementById('ch-ratings'),{type:'bar',data:{
+        labels:rated.map(t=>t.name),
+        datasets:[{label,data:rated.map(t=>t[key]),backgroundColor:rated.map(t=>ratingColor(t[key])),borderRadius:4}]
+      },options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{min:0,max:10,ticks:{font:{size:10},color:tickColor(),stepSize:2},grid:{color:gridColor()}},
+          y:{ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));
+    }
+  }
 
   if(spend.length){charts.push(new Chart(document.getElementById('ch-spend'),{type:'bar',data:{labels:spend.map(t=>t.name),datasets:[{label:'Groceries',data:spend.map(t=>t.grocery||0),backgroundColor:C.teal},{label:'Est. dining',data:spend.map(t=>(t.meals||0)*15),backgroundColor:C.coral}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{font:{size:10},color:tickColor(),callback:v=>'$'+v},grid:{color:gridColor()}},y:{stacked:true,ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));}
 }
