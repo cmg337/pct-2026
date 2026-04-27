@@ -295,6 +295,14 @@ async function loadData(){
       const p=parseCSV(txt[0]);
       if(!p.length)throw new Error('empty');
       mainData=p;townData=parseCSV(txt[1]);entriesData=parseCSV(txt[2]);
+      // Debug: log column names and first row to help diagnose mismatches
+      if(p.length){
+        console.log('All columns:', Object.keys(p[0]));
+        const sleepCols=Object.keys(p[0]).filter(k=>k.includes('sleep')||k.includes('wake')||k.includes('bed'));
+        console.log('Sleep-related columns:', sleepCols);
+        console.log('First row sleep values:', sleepCols.map(k=>k+' = '+JSON.stringify(p[0][k])));
+        console.log('First row all values:', JSON.stringify(p[0]));
+      }
       ok=true;break;
     }catch(e){}
   }
