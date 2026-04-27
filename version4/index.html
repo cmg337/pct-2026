@@ -702,41 +702,45 @@ function renderStats(el){
     const wakeTime=parseTime(d['wake up']||d['wake up ']||'');
     const hunger=num(d['hunger level']);
     const lodging=d.lodging||'';
+    const lodgingCost=num(d['lodging cost'])||null;
+    const blisters=num(d.blisters)||null;
+    const packWeight=num(d['pack weight in morning'])||null;
+    const earbuds=num(d['percent hiked with earbuds'])||null;
 
-    // Sleep data: he may have "sleep time" (bedtime), "sleep hours", and/or "sleep score"
-    // "sleep time" could be a time like "9:30 PM" (bedtime) or a number like "7.5" (hours)
-    const sleepTimeRaw=d['sleep time']||d['sleep time ']||'';
-    const sleepHoursRaw=d['sleep hours']||d['sleep hours ']||'';
-    const sleepScore=num(d['sleep score'])||num(d['sleep score '])||null;
+    // Sleep data
+    const bedtime=parseTime(d['sleep time']||''); // when he fell asleep (e.g. "21:05")
+    const inBedTime=parseTime(d['in bed time']||'');
+    const sleepRatingWatch=d['sleep rating (watch)']||'';
+    const sleepRatingPersonal=num(d['sleep rating (personal)'])||null;
+    const sleepWarmth=d['sleeping warmth']||'';
 
-    let bedtime=null;
+    // "sleep length" is H:MM format like "7:29" — parse to decimal hours
     let sleepHours=null;
-
-    // If there's an explicit "sleep hours" column, use it
-    if(sleepHoursRaw) sleepHours=num(sleepHoursRaw);
-
-    // "sleep time" — check if it's a time or a number
-    if(sleepTimeRaw){
-      const asTime=parseTime(sleepTimeRaw);
-      const asNum=num(sleepTimeRaw);
-      if(asTime!=null&&sleepTimeRaw.match(/[:\s]*(am|pm|AM|PM)/i)){
-        // Clearly a time like "9:30 PM" → bedtime
-        bedtime=asTime;
-      } else if(asNum!=null&&asNum>0&&asNum<=16&&!sleepTimeRaw.includes(':')){
-        // Looks like hours (e.g. "7.5", "8") — no colon, reasonable range
-        if(!sleepHours) sleepHours=asNum;
-      } else if(asTime!=null){
-        // Has a colon, treat as bedtime
-        bedtime=asTime;
+    const slRaw=(d['sleep length']||d['sleep hours']||d['sleep hours ']||'').trim();
+    if(slRaw){
+      // Try H:MM format first (e.g. "7:29")
+      const hm=slRaw.match(/^(\d{1,2}):(\d{2})$/);
+      if(hm){
+        sleepHours=Math.round((parseInt(hm[1])+parseInt(hm[2])/60)*10)/10;
+      } else {
+        // Try decimal hours (e.g. "7.5")
+        const n=num(slRaw);
+        if(n!=null&&n>0&&n<=24) sleepHours=n;
       }
     }
+    // Map watch sleep rating text to a number
+    const watchRatingMap={'excellent':10,'great':9,'good':8,'ok':7,'fair':6,'poor':4,'bad':3,'terrible':2};
+    const watchNum=sleepRatingWatch?watchRatingMap[sleepRatingWatch.toLowerCase()]||null:null;
+    const sleepScore=num(d['sleep score'])||num(d['sleep score '])||sleepRatingPersonal||watchNum;
     // Hiking hours
     let hikingHours=null;
     if(startTime!=null&&stopTime!=null&&stopTime>startTime) hikingHours=Math.round((stopTime-startTime)*10)/10;
     return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,
-      startTime,stopTime,wakeTime,bedtime,hikingHours,sleepHours,sleepScore,hunger,lodging,
+      startTime,stopTime,wakeTime,bedtime,inBedTime,hikingHours,sleepHours,sleepScore,
+      sleepRatingWatch,sleepWarmth,hunger,lodging,lodgingCost,blisters,packWeight,earbuds,
       startRaw:d['hiking start time']||'',stopRaw:d['hiking stop time']||'',
-      wakeRaw:d['wake up']||d['wake up ']||'',bedtimeRaw:sleepTimeRaw};
+      wakeRaw:d['wake up']||d['wake up ']||'',bedtimeRaw:d['sleep time']||'',
+      sleepLengthRaw:slRaw};
   });
 
   const totalSteps=cData.reduce((s,d)=>s+(d.steps||0),0);
@@ -819,6 +823,7 @@ function renderStats(el){
       ${d.hikingHours!=null?`<span style="color:${C.teal}">${d.hikingHours}h hiking</span>`:''}
       ${d.sleepHours!=null?`<span style="color:${C.blue}">${d.sleepHours}h sleep</span>`:''}
       ${d.sleepScore!=null?`<span style="color:${C.green}">score ${d.sleepScore}</span>`:''}
+      ${d.sleepRatingWatch?`<span style="color:${C.blue}">${escHtml(d.sleepRatingWatch)}</span>`:''}
       ${d.bedtimeRaw?`<span style="color:${C.purple}">🌙 ${escHtml(d.bedtimeRaw)}</span>`:''}
       ${d.wakeRaw?`<span style="color:${C.amber}">🌅 ${escHtml(d.wakeRaw)}</span>`:''}
       ${d.waters!=null&&d.waters>0?`<span style="color:${C.blue}">${d.waters} water</span>`:''}
