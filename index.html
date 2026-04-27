@@ -129,6 +129,7 @@
   .wx-loading { font-size: .78rem; color: var(--tx3); padding: 8px 0; }
 
 </style>
+<script data-goatcounter="https://pct2026.goatcounter.com/count" async src="//gc.zgo.at/count.js"></script>
 </head>
 <body>
 <div class="shell">
@@ -294,6 +295,14 @@ async function loadData(){
       const p=parseCSV(txt[0]);
       if(!p.length)throw new Error('empty');
       mainData=p;townData=parseCSV(txt[1]);entriesData=parseCSV(txt[2]);
+      // Debug: log column names and first row to help diagnose mismatches
+      if(p.length){
+        console.log('All columns:', Object.keys(p[0]));
+        const sleepCols=Object.keys(p[0]).filter(k=>k.includes('sleep')||k.includes('wake')||k.includes('bed'));
+        console.log('Sleep-related columns:', sleepCols);
+        console.log('First row sleep values:', sleepCols.map(k=>k+' = '+JSON.stringify(p[0][k])));
+        console.log('First row all values:', JSON.stringify(p[0]));
+      }
       ok=true;break;
     }catch(e){}
   }
@@ -531,30 +540,156 @@ function drawLeafletMap(mile){
 
 // --- Body & Mind ---
 function renderBodyMind(el){
-  const FIELDS=[{k:'enjoyment',l:'Enjoyment',c:C.teal},{k:'accomplishment',l:'Accomplishment',c:C.green},{k:'difficulty',l:'Difficulty',c:C.coral},{k:'hunger level',l:'Hunger',c:C.amber},{k:'injury level',l:'Injury',c:C.red},{k:'soreness',l:'Soreness',c:C.pink},{k:'lonelyness',l:'Loneliness',c:C.purple},{k:'natural beauty',l:'Beauty',c:C.blue}];
-  const cData=mainData.map(d=>{const o={date:sd(d.date)};FIELDS.forEach(f=>o[f.l]=num(d[f.k]));return o}).filter(d=>FIELDS.some(f=>d[f.l]!=null));
-  const avgs=FIELDS.map(f=>{const v=cData.map(d=>d[f.l]).filter(x=>x!=null);return{...f,avg:v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*10)/10:0}});
+  const GOOD=[
+    {k:'enjoyment',l:'Enjoyment',c:C.teal},{k:'accomplishment',l:'Accomplishment',c:C.green},
+    {k:'natural beauty',l:'Beauty',c:C.blue},{k:'social interaction',l:'Social',c:C.tealLt},
+  ];
+  const WATCH=[
+    {k:'difficulty',l:'Difficulty',c:C.coral},{k:'hunger level',l:'Hunger',c:C.amber},
+    {k:'soreness',l:'Soreness',c:C.pink},{k:'injury level',l:'Injury',c:C.red},
+    {k:'lonelyness',l:'Loneliness',c:C.purple},
+  ];
+  const ALL=[...GOOD,...WATCH];
 
-  el.innerHTML=`
-    <div class="section">Latest day snapshot</div>
-    <div class="radar-wrap"><div class="chart-wrap" style="height:280px"><canvas id="ch-radar"></canvas></div></div>
-    <div class="section">Trip averages</div>
-    <div class="avg-pills">${avgs.map(a=>`<div class="avg-pill"><span class="dot" style="background:${a.c}"></span><span style="color:var(--tx2)">${a.l}:</span><span style="font-weight:500">${a.avg}</span></div>`).join('')}</div>
-    <div class="chart-label">Positive trends</div>
-    <div class="chart-wrap" style="height:240px"><canvas id="ch-mood1"></canvas></div>
-    <div class="legend">${FIELDS.slice(0,4).map(f=>`<span><span class="leg-ln" style="background:${f.c}"></span>${f.l}</span>`).join('')}</div>
-    <div class="chart-label">Physical & social trends</div>
-    <div class="chart-wrap" style="height:240px"><canvas id="ch-mood2"></canvas></div>
-    <div class="legend">${FIELDS.slice(4).map(f=>`<span><span class="leg-ln" style="background:${f.c}"></span>${f.l}</span>`).join('')}</div>`;
+  const cData=mainData.map(d=>{
+    const o={date:sd(d.date)};
+    ALL.forEach(f=>{
+      // Handle trailing spaces in column names
+      o[f.l]=num(d[f.k])||num(d[f.k+' ']);
+    });
+    return o;
+  }).filter(d=>ALL.some(f=>d[f.l]!=null));
 
   const last=cData[cData.length-1];
-  if(last){charts.push(new Chart(document.getElementById('ch-radar'),{type:'radar',data:{labels:FIELDS.map(f=>f.l),datasets:[{data:FIELDS.map(f=>last[f.l]||0),borderColor:C.teal,backgroundColor:C.tealBg+'80',borderWidth:2,pointRadius:3,pointBackgroundColor:C.teal}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{r:{min:0,max:10,ticks:{stepSize:2,font:{size:9},color:tickColor(),backdropColor:'transparent'},grid:{color:gridColor()},pointLabels:{font:{size:11},color:tickColor()}}}}}));}
+  const avgs=ALL.map(f=>{const v=cData.map(d=>d[f.l]).filter(x=>x!=null);return{...f,avg:v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*10)/10:0,vals:v}});
 
-  const mkLine=(id,flds)=>{charts.push(new Chart(document.getElementById(id),{type:'line',data:{labels:cData.map(d=>d.date),datasets:flds.map(f=>({label:f.l,data:cData.map(d=>d[f.l]),borderColor:f.c,borderWidth:2,pointRadius:0,tension:.3,spanGaps:true}))},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}))};
-  mkLine('ch-mood1',FIELDS.slice(0,4));mkLine('ch-mood2',FIELDS.slice(4));
+  // Build sparkline SVGs inline
+  function sparkSvg(vals,color){
+    if(vals.length<2) return '';
+    const w=60,h=18,pad=1;
+    const mn=0,mx=10;
+    const pts=vals.map((v,i)=>{
+      const x=pad+(i/(vals.length-1))*(w-2*pad);
+      const y=h-pad-((v-mn)/(mx-mn))*(h-2*pad);
+      return`${x},${y}`;
+    }).join(' ');
+    return`<svg width="${w}" height="${h}" style="vertical-align:middle;margin-left:6px"><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round"/></svg>`;
+  }
+
+  function barRow(f,val,avg,vals,isWatch){
+    const pctVal=val!=null?(val/10*100):0;
+    const pctAvg=avg>0?(avg/10*100):0;
+    const barBg=isWatch?'var(--bd2)':'var(--bd2)';
+    const valDisplay=val!=null?val:'—';
+    return`<div style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px">
+        <span style="font-size:.78rem;color:var(--tx2);display:flex;align-items:center;gap:4px">
+          <span style="width:8px;height:8px;border-radius:2px;background:${f.c};display:inline-block"></span>${f.l}
+        </span>
+        <span style="font-size:.78rem;display:flex;align-items:center">
+          <span style="font-weight:500;color:var(--tx)">${valDisplay}</span>
+          <span style="color:var(--tx3);margin-left:6px">avg ${avg}</span>
+          ${sparkSvg(vals,f.c)}
+        </span>
+      </div>
+      <div style="height:6px;border-radius:3px;background:${barBg};position:relative;overflow:visible">
+        ${val!=null?`<div style="height:100%;width:${pctVal}%;border-radius:3px;background:${f.c};opacity:.7;transition:width .4s"></div>`:''}
+        ${avg>0?`<div style="position:absolute;left:${pctAvg}%;top:-2px;width:2px;height:10px;background:var(--tx3);border-radius:1px" title="Trip avg: ${avg}"></div>`:''}
+      </div>
+    </div>`;
+  }
+
+  el.innerHTML=`
+    <div class="section">Latest day${last?` — ${last.date}`:''}</div>
+    <div style="margin-bottom:6px;font-size:.72rem;color:var(--tx3)">Bar = today's value · Tick mark = trip average · Sparkline = trend</div>
+    <div style="margin-bottom:20px">
+      <div style="font-size:.72rem;font-weight:500;color:${C.teal};text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px">Good vibes</div>
+      ${avgs.filter(a=>GOOD.some(g=>g.k===a.k)).map(a=>barRow(a,last?last[a.l]:null,a.avg,a.vals,false)).join('')}
+      <div style="font-size:.72rem;font-weight:500;color:${C.coral};text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px">Watch list</div>
+      ${avgs.filter(a=>WATCH.some(w=>w.k===a.k)).map(a=>barRow(a,last?last[a.l]:null,a.avg,a.vals,true)).join('')}
+    </div>
+    <div class="chart-label">Trends over time <span style="font-size:.68rem;color:var(--tx3);font-weight:400">— click a metric to highlight</span></div>
+    <div id="bm-legend" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div class="chart-wrap" style="height:300px"><canvas id="ch-trends"></canvas></div>`;
+
+  // Build interactive chart with clickable legend
+  if(cData.length){
+    const datasets=ALL.map(f=>({
+      label:f.l,data:cData.map(d=>d[f.l]),borderColor:f.c,
+      borderWidth:2,pointRadius:0,tension:.3,spanGaps:true,
+    }));
+
+    const trendsChart=new Chart(document.getElementById('ch-trends'),{
+      type:'line',
+      data:{labels:cData.map(d=>d.date),datasets},
+      options:{responsive:true,maintainAspectRatio:false,
+        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+        scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
+          y:{min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}},
+        interaction:{mode:'index',intersect:false},
+      }
+    });
+    charts.push(trendsChart);
+
+    // Clickable legend
+    const legendEl=document.getElementById('bm-legend');
+    let activeIdx=null;
+
+    function renderLegend(){
+      legendEl.innerHTML=ALL.map((f,i)=>{
+        const isActive=activeIdx===null||activeIdx===i;
+        const opacity=isActive?1:0.25;
+        return`<button onclick="window._bmToggle(${i})" style="
+          display:flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;
+          border:1px solid ${isActive?f.c:'var(--bd2)'};cursor:pointer;font-family:var(--font);
+          font-size:.72rem;background:${activeIdx===i?f.c+'18':'transparent'};
+          color:${isActive?'var(--tx)':'var(--tx3)'};opacity:${opacity};transition:.15s;
+          font-weight:${activeIdx===i?'500':'400'};
+        "><span style="width:8px;height:8px;border-radius:50%;background:${f.c};display:inline-block"></span>${f.l}</button>`;
+      }).join('');
+    }
+
+    window._bmToggle=function(idx){
+      if(activeIdx===idx) activeIdx=null; else activeIdx=idx;
+      trendsChart.data.datasets.forEach((ds,i)=>{
+        if(activeIdx===null){
+          ds.borderWidth=2;ds.borderColor=ALL[i].c;ds.pointRadius=0;
+        } else if(i===activeIdx){
+          ds.borderWidth=3;ds.borderColor=ALL[i].c;ds.pointRadius=3;
+        } else {
+          ds.borderWidth=1;ds.borderColor=ALL[i].c+'30';ds.pointRadius=0;
+        }
+      });
+      trendsChart.update();
+      renderLegend();
+    };
+    renderLegend();
+  }
 }
 
 // --- Stats ---
+function parseTime(str){
+  // Parse time strings like "6:30", "6:30 AM", "18:30", "6:30am"
+  if(!str) return null;
+  str=str.trim().toLowerCase().replace(/\s+/g,'');
+  let m=str.match(/^(\d{1,2}):?(\d{2})?\s*(am|pm)?$/);
+  if(!m) return null;
+  let h=parseInt(m[1]),min=parseInt(m[2]||'0');
+  if(m[3]==='pm'&&h<12) h+=12;
+  if(m[3]==='am'&&h===12) h=0;
+  if(h>23||min>59) return null;
+  return h+min/60; // decimal hours
+}
+
+function fmtTime(dec){
+  if(dec==null) return '—';
+  let h=Math.floor(dec),m=Math.round((dec-h)*60);
+  if(m===60){h++;m=0;}
+  const ampm=h>=12?'PM':'AM';
+  const h12=h===0?12:h>12?h-12:h;
+  return `${h12}:${m.toString().padStart(2,'0')} ${ampm}`;
+}
+
 function renderStats(el){
   const cData=mainData.map((d,i)=>{
     const prevMile=i>0?num(mainData[i-1]['end mile marker'])||0:0;
@@ -562,25 +697,83 @@ function renderStats(el){
     const steps=num(d.steps);
     const waters=num(d['waters crossed']);
     const breaks=num(d['number of major breaks']);
-    const startTime=d['hiking start time']||'';
-    const stopTime=d['hiking stop time']||'';
-    const wakeTime=d['wake up']||d['wake up ']||'';
-    const sleepTime=d['sleep time']||'';
+    const startTime=parseTime(d['hiking start time']||'');
+    const stopTime=parseTime(d['hiking stop time']||'');
+    const wakeTime=parseTime(d['wake up']||d['wake up ']||'');
     const hunger=num(d['hunger level']);
     const lodging=d.lodging||'';
-    return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,startTime,stopTime,wakeTime,sleepTime,hunger,lodging};
+    const lodgingCost=num(d['lodging cost'])||null;
+    const blisters=num(d.blisters)||null;
+    const packWeight=num(d['pack weight in morning'])||null;
+    const earbuds=num(d['percent hiked with earbuds'])||null;
+
+    // Sleep data
+    const bedtime=parseTime(d['sleep time']||''); // when he fell asleep (e.g. "21:05")
+    const inBedTime=parseTime(d['in bed time']||'');
+    const sleepRatingWatch=d['sleep rating (watch)']||'';
+    const sleepRatingPersonal=num(d['sleep rating (personal)'])||null;
+    const sleepWarmth=d['sleeping warmth']||'';
+
+    // "sleep length" is H:MM format like "7:29" — parse to decimal hours
+    let sleepHours=null;
+    const slRaw=(d['sleep length']||d['sleep hours']||d['sleep hours ']||'').trim();
+    if(slRaw){
+      // Try H:MM format first (e.g. "7:29")
+      const hm=slRaw.match(/^(\d{1,2}):(\d{2})$/);
+      if(hm){
+        sleepHours=Math.round((parseInt(hm[1])+parseInt(hm[2])/60)*10)/10;
+      } else {
+        // Try decimal hours (e.g. "7.5")
+        const n=num(slRaw);
+        if(n!=null&&n>0&&n<=24) sleepHours=n;
+      }
+    }
+    // Map watch sleep rating text to a number
+    const watchRatingMap={'excellent':10,'great':9,'good':8,'ok':7,'fair':6,'poor':4,'bad':3,'terrible':2};
+    const watchNum=sleepRatingWatch?watchRatingMap[sleepRatingWatch.toLowerCase()]||null:null;
+    const sleepScore=num(d['sleep score'])||num(d['sleep score '])||sleepRatingPersonal||watchNum;
+    // Hiking hours
+    let hikingHours=null;
+    if(startTime!=null&&stopTime!=null&&stopTime>startTime) hikingHours=Math.round((stopTime-startTime)*10)/10;
+    return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,
+      startTime,stopTime,wakeTime,bedtime,inBedTime,hikingHours,sleepHours,sleepScore,
+      sleepRatingWatch,sleepWarmth,hunger,lodging,lodgingCost,blisters,packWeight,earbuds,
+      startRaw:d['hiking start time']||'',stopRaw:d['hiking stop time']||'',
+      wakeRaw:d['wake up']||d['wake up ']||'',bedtimeRaw:d['sleep time']||'',
+      sleepLengthRaw:slRaw};
   });
 
   const totalSteps=cData.reduce((s,d)=>s+(d.steps||0),0);
   const totalWaters=cData.reduce((s,d)=>s+(d.waters||0),0);
-  const totalBreaks=cData.reduce((s,d)=>s+(d.breaks||0),0);
   const daysWithSteps=cData.filter(d=>d.steps!=null);
   const avgSteps=daysWithSteps.length?Math.round(totalSteps/daysWithSteps.length):0;
   const daysWithHunger=cData.map(d=>d.hunger).filter(x=>x!=null);
   const avgHunger=daysWithHunger.length?Math.round(daysWithHunger.reduce((a,b)=>a+b,0)/daysWithHunger.length*10)/10:0;
 
-  // Steps per mile (efficiency)
+  const daysWithHiking=cData.filter(d=>d.hikingHours!=null);
+  const avgHiking=daysWithHiking.length?Math.round(daysWithHiking.reduce((s,d)=>s+d.hikingHours,0)/daysWithHiking.length*10)/10:null;
+  const daysWithSleep=cData.filter(d=>d.sleepHours!=null);
+  const avgSleep=daysWithSleep.length?Math.round(daysWithSleep.reduce((s,d)=>s+d.sleepHours,0)/daysWithSleep.length*10)/10:null;
+  const daysWithScore=cData.filter(d=>d.sleepScore!=null);
+  const avgScore=daysWithScore.length?Math.round(daysWithScore.reduce((s,d)=>s+d.sleepScore,0)/daysWithScore.length*10)/10:null;
+  const avgWake=cData.filter(d=>d.wakeTime!=null);
+  const avgWakeTime=avgWake.length?avgWake.reduce((s,d)=>s+d.wakeTime,0)/avgWake.length:null;
+  const avgBedtimeArr=cData.filter(d=>d.bedtime!=null);
+  // Bedtime averaging: normalize around midnight (add 24 to PM times for correct avg)
+  let avgBedtime=null;
+  if(avgBedtimeArr.length){
+    const normalized=avgBedtimeArr.map(d=>d.bedtime<12?d.bedtime+24:d.bedtime);
+    const raw=normalized.reduce((s,v)=>s+v,0)/normalized.length;
+    avgBedtime=raw>=24?raw-24:raw;
+  }
+
+  // Steps per mile
   const stepsPerMile=daysWithSteps.filter(d=>d.daily>0).map(d=>({date:d.date,spm:Math.round((d.steps||0)/d.daily)}));
+
+  // Lodging breakdown
+  const lodgingCounts={};
+  cData.forEach(d=>{if(d.lodging){const k=d.lodging.toLowerCase().trim();lodgingCounts[k]=(lodgingCounts[k]||0)+1;}});
+  const lodgingEntries=Object.entries(lodgingCounts).sort((a,b)=>b[1]-a[1]);
 
   el.innerHTML=`
     <div class="metrics">
@@ -589,21 +782,78 @@ function renderStats(el){
       <div class="metric"><div class="metric-label">Water crossings</div><div class="metric-val" style="color:${C.purple}">${totalWaters>0?fmt(totalWaters):'—'}</div></div>
       <div class="metric"><div class="metric-label">Avg hunger</div><div class="metric-val" style="color:${C.amber}">${avgHunger>0?avgHunger+'/10':'—'}</div></div>
     </div>
+
+    <div class="section">Sleep & schedule</div>
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Avg bedtime</div><div class="metric-val" style="color:${C.purple};font-size:1.1rem">${fmtTime(avgBedtime)}</div></div>
+      <div class="metric"><div class="metric-label">Avg wake up</div><div class="metric-val" style="color:${C.amber};font-size:1.1rem">${fmtTime(avgWakeTime)}</div></div>
+      <div class="metric"><div class="metric-label">Avg sleep</div><div class="metric-val" style="color:${C.blue}">${avgSleep!=null?avgSleep+'h':'—'}</div></div>
+      ${daysWithScore.length?`<div class="metric"><div class="metric-label">Avg sleep score</div><div class="metric-val" style="color:${C.green}">${avgScore!=null?avgScore+'/10':'—'}</div></div>`
+      :`<div class="metric"><div class="metric-label">Avg hiking</div><div class="metric-val" style="color:${C.teal}">${avgHiking!=null?avgHiking+'h':'—'}</div></div>`}
+    </div>
+
+    ${daysWithSleep.length>1||daysWithScore.length>1?`
+    <div class="chart-label">Sleep tracking</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="ch-sleep"></canvas></div>
+    <div class="legend">
+      <span><span class="leg-sq" style="background:${C.blue}"></span>Sleep hours</span>
+      ${daysWithScore.length?`<span><span class="leg-ln" style="background:${C.green}"></span>Sleep score</span>`:''}
+    </div>`:''}
+
+    ${daysWithHiking.length>1?`
+    <div class="chart-label">Hiking hours per day</div>
+    <div class="chart-wrap" style="height:180px"><canvas id="ch-hiking"></canvas></div>`:''}
+
     <div class="chart-label">Daily steps</div>
     <div class="chart-wrap" style="height:200px"><canvas id="ch-steps"></canvas></div>
     <div class="chart-label">Hunger level over time</div>
     <div class="chart-wrap" style="height:180px"><canvas id="ch-hunger"></canvas></div>
     ${stepsPerMile.length>1?`<div class="chart-label">Steps per mile (effort/terrain)</div><div class="chart-wrap" style="height:180px"><canvas id="ch-spm"></canvas></div>`:''}
+
+    ${lodgingEntries.length?`<div class="section">Lodging breakdown</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px">
+      ${lodgingEntries.map(([k,v])=>`<div class="avg-pill"><span style="font-weight:500">${v}</span><span style="color:var(--tx2)">${k}</span></div>`).join('')}
+    </div>`:''}
+
     <div class="section">Daily log</div>
     ${cData.slice().reverse().slice(0,14).map(d=>`<div class="log-row" style="flex-wrap:wrap;gap:6px">
       <span class="date">${d.date}</span>
       ${d.daily>0?`<span style="color:${C.teal};font-weight:500">${d.daily} mi</span>`:''}
       ${d.steps!=null?`<span style="color:var(--tx2)">${fmt(d.steps)} steps</span>`:''}
+      ${d.hikingHours!=null?`<span style="color:${C.teal}">${d.hikingHours}h hiking</span>`:''}
+      ${d.sleepHours!=null?`<span style="color:${C.blue}">${d.sleepHours}h sleep</span>`:''}
+      ${d.sleepScore!=null?`<span style="color:${C.green}">score ${d.sleepScore}</span>`:''}
+      ${d.sleepRatingWatch?`<span style="color:${C.blue}">${escHtml(d.sleepRatingWatch)}</span>`:''}
+      ${d.bedtimeRaw?`<span style="color:${C.purple}">🌙 ${escHtml(d.bedtimeRaw)}</span>`:''}
+      ${d.wakeRaw?`<span style="color:${C.amber}">🌅 ${escHtml(d.wakeRaw)}</span>`:''}
       ${d.waters!=null&&d.waters>0?`<span style="color:${C.blue}">${d.waters} water</span>`:''}
       ${d.breaks!=null?`<span style="color:var(--tx3)">${d.breaks} breaks</span>`:''}
       ${d.hunger!=null?`<span style="color:${C.amber}">hunger ${d.hunger}</span>`:''}
       ${d.lodging?`<span style="color:var(--tx3)">${escHtml(d.lodging)}</span>`:''}
     </div>`).join('')}`;
+
+  // Sleep chart — hours as bars, score as line overlay
+  const sleepData=cData.filter(d=>d.sleepHours!=null||d.sleepScore!=null);
+  if(sleepData.length>1&&document.getElementById('ch-sleep')){
+    const datasets=[
+      {type:'bar',label:'Sleep hours',data:sleepData.map(d=>d.sleepHours),backgroundColor:C.blue,borderRadius:4,yAxisID:'y',order:2},
+    ];
+    const scales={
+      x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
+      y:{position:'left',ticks:{font:{size:10},color:tickColor(),callback:v=>v+'h'},grid:{color:gridColor()},title:{display:true,text:'Hours',font:{size:10},color:tickColor()}},
+    };
+    if(daysWithScore.length){
+      datasets.push({type:'line',label:'Sleep score',data:sleepData.map(d=>d.sleepScore),borderColor:C.green,borderWidth:2,pointRadius:2,tension:.3,spanGaps:true,yAxisID:'y1',order:1});
+      scales.y1={position:'right',min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{display:false},title:{display:true,text:'Score',font:{size:10},color:tickColor()}};
+    }
+    charts.push(new Chart(document.getElementById('ch-sleep'),{type:'bar',data:{labels:sleepData.map(d=>d.date),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales}}));
+  }
+
+  // Hiking hours chart
+  const hikingData=cData.filter(d=>d.hikingHours!=null);
+  if(hikingData.length>1&&document.getElementById('ch-hiking')){
+    charts.push(new Chart(document.getElementById('ch-hiking'),{type:'bar',data:{labels:hikingData.map(d=>d.date),datasets:[{label:'Hiking hours',data:hikingData.map(d=>d.hikingHours),backgroundColor:C.teal,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor(),callback:v=>v+'h'},grid:{color:gridColor()}}}}}));
+  }
 
   const stepsData=cData.filter(d=>d.steps!=null);
   if(stepsData.length){
@@ -636,34 +886,140 @@ function renderWeather(el){
 // --- Towns ---
 function renderTowns(el){
   if(!townData.length){el.innerHTML='<div class="center-msg">No town data yet</div>';return}
-  const towns=townData.map(t=>({name:t['town name']||'Unknown',entered:t['date entered town'],left:t['date left town'],mile:num(t['left the trail at mile marker'])||num(t['left the trail at mile marker ']),grocery:num(t['grocery bill']),meals:num(t['# meals at restaurant']),restaurant:t['restruant name(s)']||t['restaurant name(s)']||'',charged:t['charged']||t['charged ']||'',distance:t['distance from trail to town']||''}));
+  const towns=townData.map(t=>({
+    name:t['town name']||'Unknown',entered:t['date entered town'],left:t['date left town'],
+    mile:num(t['left the trail at mile marker'])||num(t['left the trail at mile marker ']),
+    grocery:num(t['grocery bill']),meals:num(t['# meals at restaurant']),
+    restaurant:t['restruant name(s)']||t['restaurant name(s)']||'',
+    charged:t['charged']||t['charged ']||'',
+    distance:t['distance from trail to town']||'',
+    foodRating:num(t['food rating'])||num(t['food rating '])||null,
+    townRating:num(t['town rating'])||num(t['town rating '])||num(t['rating'])||num(t['rating '])||null,
+  }));
   const totalG=towns.reduce((s,t)=>s+(t.grocery||0),0),totalM=towns.reduce((s,t)=>s+(t.meals||0),0);
   const totalFood=totalG+totalM*15;
   const spend=towns.filter(t=>t.grocery!=null||t.meals!=null);
 
-  // Food/restaurant highlight
-  const allRestaurants=towns.filter(t=>t.restaurant).map(t=>({town:t.name,restaurants:t.restaurant,meals:t.meals,mile:t.mile}));
+  // Detect which rating columns exist
+  const hasFoodRatings=towns.some(t=>t.foodRating!=null);
+  const hasTownRatings=towns.some(t=>t.townRating!=null);
+  const foodRated=towns.filter(t=>t.foodRating!=null);
+  const townRated=towns.filter(t=>t.townRating!=null);
+  const avgFood=foodRated.length?Math.round(foodRated.reduce((s,t)=>s+t.foodRating,0)/foodRated.length*10)/10:null;
+  const avgTown=townRated.length?Math.round(townRated.reduce((s,t)=>s+t.townRating,0)/townRated.length*10)/10:null;
+  const bestFood=foodRated.length?foodRated.reduce((a,b)=>b.foodRating>a.foodRating?b:a):null;
+  const bestTown=townRated.length?townRated.reduce((a,b)=>b.townRating>a.townRating?b:a):null;
+
+  // Rating bar helper
+  function ratingBar(val,max,color,label){
+    if(val==null) return '';
+    const pct=Math.round(val/max*100);
+    return `<div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+      ${label?`<span style="font-size:.68rem;color:var(--tx3);min-width:36px">${label}</span>`:''}
+      <div style="flex:1;height:6px;border-radius:3px;background:var(--bd2);overflow:hidden">
+        <div style="height:100%;width:${pct}%;border-radius:3px;background:${color}"></div>
+      </div>
+      <span style="font-size:.78rem;font-weight:500;color:${color};min-width:28px">${val}/10</span>
+    </div>`;
+  }
+
+  function ratingColor(val){
+    if(val>=8) return C.teal;
+    if(val>=6) return C.amber;
+    if(val>=4) return C.coral;
+    return C.red;
+  }
+
+  // Trophy banners
+  let trophyHtml='';
+  if(bestFood||bestTown){
+    trophyHtml+='<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">';
+    if(bestFood) trophyHtml+=`<div style="flex:1;min-width:200px;background:${C.coralBg};border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.4rem">🍽️</span>
+      <div>
+        <div style="font-size:.68rem;color:${C.coral};font-weight:500;text-transform:uppercase;letter-spacing:.04em">Best food</div>
+        <div style="font-size:.92rem;font-weight:500">${escHtml(bestFood.name)} — ${bestFood.foodRating}/10</div>
+        ${bestFood.restaurant?`<div style="font-size:.72rem;color:var(--tx2)">${escHtml(bestFood.restaurant)}</div>`:''}
+      </div>
+    </div>`;
+    if(bestTown) trophyHtml+=`<div style="flex:1;min-width:200px;background:${C.purpleBg};border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:1.4rem">🏆</span>
+      <div>
+        <div style="font-size:.68rem;color:${C.purple};font-weight:500;text-transform:uppercase;letter-spacing:.04em">Best town</div>
+        <div style="font-size:.92rem;font-weight:500">${escHtml(bestTown.name)} — ${bestTown.townRating}/10</div>
+      </div>
+    </div>`;
+    trophyHtml+='</div>';
+  }
+
+  // Chart section — side by side if both exist
+  const hasAnyRatings=foodRated.length>1||townRated.length>1;
+  let chartHtml='';
+  if(hasFoodRatings&&hasTownRatings&&foodRated.length>1&&townRated.length>1){
+    // Combined chart with both ratings
+    const allRated=towns.filter(t=>t.foodRating!=null||t.townRating!=null);
+    chartHtml=`<div class="chart-label">Town & food ratings</div>
+      <div class="chart-wrap" style="height:${Math.max(160,allRated.length*42+50)}px"><canvas id="ch-ratings"></canvas></div>
+      <div class="legend"><span><span class="leg-sq" style="background:${C.coral}"></span>Food</span><span><span class="leg-sq" style="background:${C.purple}"></span>Town</span></div>`;
+  } else if(foodRated.length>1){
+    chartHtml=`<div class="chart-label">Food ratings by town</div>
+      <div class="chart-wrap" style="height:${Math.max(140,foodRated.length*38+50)}px"><canvas id="ch-ratings"></canvas></div>`;
+  } else if(townRated.length>1){
+    chartHtml=`<div class="chart-label">Town ratings</div>
+      <div class="chart-wrap" style="height:${Math.max(140,townRated.length*38+50)}px"><canvas id="ch-ratings"></canvas></div>`;
+  }
 
   el.innerHTML=`
     <div class="metrics">
       <div class="metric"><div class="metric-label">Towns visited</div><div class="metric-val" style="color:${C.purple}">${towns.length}</div></div>
+      ${hasTownRatings?`<div class="metric"><div class="metric-label">Avg town rating</div><div class="metric-val" style="color:${C.purple}">${avgTown!=null?avgTown+'/10':'—'}</div></div>`:''}
+      ${hasFoodRatings?`<div class="metric"><div class="metric-label">Avg food rating</div><div class="metric-val" style="color:${C.coral}">${avgFood!=null?avgFood+'/10':'—'}</div></div>`:''}
       <div class="metric"><div class="metric-label">Grocery spending</div><div class="metric-val" style="color:${C.teal}">$${fmt(totalG)}</div></div>
-      <div class="metric"><div class="metric-label">Restaurant meals</div><div class="metric-val" style="color:${C.coral}">${totalM}</div></div>
-      <div class="metric"><div class="metric-label">Est. total food</div><div class="metric-val" style="color:${C.amber}">$${fmt(totalFood)}</div><div class="metric-sub">~$15/meal est.</div></div>
+      <div class="metric"><div class="metric-label">Est. total food</div><div class="metric-val" style="color:${C.amber}">$${fmt(totalFood)}</div><div class="metric-sub">${totalM} meals out</div></div>
     </div>
+    ${trophyHtml}
+    ${chartHtml}
     ${spend.length?`<div class="chart-label">Spending by town</div><div class="chart-wrap" style="height:${Math.max(160,spend.length*42+50)}px"><canvas id="ch-spend"></canvas></div><div class="legend"><span><span class="leg-sq" style="background:${C.teal}"></span>Groceries</span><span><span class="leg-sq" style="background:${C.coral}"></span>Est. dining (~$15/meal)</span></div>`:''}
-    ${allRestaurants.length?`<div class="section">Food log</div>${allRestaurants.map(r=>`<div class="town-card">
-      <div style="display:flex;justify-content:space-between;align-items:baseline">
-        <span style="font-weight:500;font-size:.88rem">${escHtml(r.town)}</span>
-        ${r.mile!=null?`<span class="town-mile">mi ${fmt(r.mile)}</span>`:''}
-      </div>
-      <div style="font-size:.82rem;color:${C.coral};margin-top:3px">${escHtml(r.restaurants)}</div>
-      ${r.meals?`<div style="font-size:.72rem;color:var(--tx3);margin-top:2px">${r.meals} meal${r.meals>1?'s':''}</div>`:''}
-    </div>`).join('')}`:''}
-    <div class="section">Town log</div>
+    <div class="section">Town details</div>
     ${towns.map(t=>{
       const det=[t.entered&&`In: ${sd(t.entered)}`,t.left&&`Out: ${sd(t.left)}`,t.grocery&&`Grocery: $${fmt(t.grocery)}`,t.meals&&`${t.meals} meal${t.meals>1?'s':''} out`,t.distance&&`${t.distance} from trail`,t.charged&&t.charged.toLowerCase()!=='no'&&t.charged.trim()!=='0'&&t.charged.trim()!==''?'Charged devices':null].filter(Boolean).join('  ·  ');
-      return`<div class="town-card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="town-name">${escHtml(t.name)}</span>${t.mile?`<span class="town-mile">mi ${fmt(t.mile)}</span>`:''}</div>${det?`<div class="town-detail">${det}</div>`:''}${t.restaurant?`<div class="town-rest">${escHtml(t.restaurant)}</div>`:''}</div>`}).join('')}`;
+      const showBoth=hasFoodRatings&&hasTownRatings;
+      return`<div class="town-card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <span class="town-name">${escHtml(t.name)}</span>
+          ${t.mile?`<span class="town-mile">mi ${fmt(t.mile)}</span>`:''}
+        </div>
+        ${det?`<div class="town-detail">${det}</div>`:''}
+        ${t.restaurant?`<div style="font-size:.82rem;color:${C.coral};margin-top:3px">${escHtml(t.restaurant)}</div>`:''}
+        ${ratingBar(t.townRating,10,C.purple,showBoth?'Town':'')}
+        ${ratingBar(t.foodRating,10,C.coral,showBoth?'Food':'')}
+      </div>`}).join('')}`;
+
+  // Ratings chart
+  if(document.getElementById('ch-ratings')){
+    if(hasFoodRatings&&hasTownRatings){
+      const allRated=towns.filter(t=>t.foodRating!=null||t.townRating!=null);
+      charts.push(new Chart(document.getElementById('ch-ratings'),{type:'bar',data:{
+        labels:allRated.map(t=>t.name),
+        datasets:[
+          {label:'Food',data:allRated.map(t=>t.foodRating),backgroundColor:C.coral,borderRadius:4},
+          {label:'Town',data:allRated.map(t=>t.townRating),backgroundColor:C.purple,borderRadius:4},
+        ]
+      },options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{min:0,max:10,ticks:{font:{size:10},color:tickColor(),stepSize:2},grid:{color:gridColor()}},
+          y:{ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));
+    } else {
+      const rated=foodRated.length?foodRated:townRated;
+      const key=foodRated.length?'foodRating':'townRating';
+      const label=foodRated.length?'Food rating':'Town rating';
+      charts.push(new Chart(document.getElementById('ch-ratings'),{type:'bar',data:{
+        labels:rated.map(t=>t.name),
+        datasets:[{label,data:rated.map(t=>t[key]),backgroundColor:rated.map(t=>ratingColor(t[key])),borderRadius:4}]
+      },options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},
+        scales:{x:{min:0,max:10,ticks:{font:{size:10},color:tickColor(),stepSize:2},grid:{color:gridColor()}},
+          y:{ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));
+    }
+  }
 
   if(spend.length){charts.push(new Chart(document.getElementById('ch-spend'),{type:'bar',data:{labels:spend.map(t=>t.name),datasets:[{label:'Groceries',data:spend.map(t=>t.grocery||0),backgroundColor:C.teal},{label:'Est. dining',data:spend.map(t=>(t.meals||0)*15),backgroundColor:C.coral}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{stacked:true,ticks:{font:{size:10},color:tickColor(),callback:v=>'$'+v},grid:{color:gridColor()}},y:{stacked:true,ticks:{font:{size:11},color:tickColor()},grid:{display:false}}}}}));}
 }
