@@ -692,24 +692,19 @@ function renderStats(el){
     const startTime=parseTime(d['hiking start time']||'');
     const stopTime=parseTime(d['hiking stop time']||'');
     const wakeTime=parseTime(d['wake up']||d['wake up ']||'');
-    const sleepTime=parseTime(d['sleep time']||'');
+    const bedtime=parseTime(d['sleep time']||''); // when he fell asleep
     const hunger=num(d['hunger level']);
     const lodging=d.lodging||'';
+    // Use his actual logged sleep hours column (not calculated)
+    const sleepHours=num(d['sleep hours'])||num(d['sleep hours '])||null;
+    const sleepScore=num(d['sleep score'])||num(d['sleep score '])||null;
     // Hiking hours
     let hikingHours=null;
     if(startTime!=null&&stopTime!=null&&stopTime>startTime) hikingHours=Math.round((stopTime-startTime)*10)/10;
-    // Sleep hours
-    let sleepHours=null;
-    if(sleepTime!=null&&wakeTime!=null){
-      // Sleep is usually evening→morning, so add 24 if wake < sleep
-      let diff=wakeTime-sleepTime;
-      if(diff<0) diff+=24;
-      if(diff>0&&diff<16) sleepHours=Math.round(diff*10)/10;
-    }
     return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,
-      startTime,stopTime,wakeTime,sleepTime,hikingHours,sleepHours,hunger,lodging,
+      startTime,stopTime,wakeTime,bedtime,hikingHours,sleepHours,sleepScore,hunger,lodging,
       startRaw:d['hiking start time']||'',stopRaw:d['hiking stop time']||'',
-      wakeRaw:d['wake up']||d['wake up ']||'',sleepRaw:d['sleep time']||''};
+      wakeRaw:d['wake up']||d['wake up ']||'',bedtimeRaw:d['sleep time']||''};
   });
 
   const totalSteps=cData.reduce((s,d)=>s+(d.steps||0),0);
@@ -723,10 +718,18 @@ function renderStats(el){
   const avgHiking=daysWithHiking.length?Math.round(daysWithHiking.reduce((s,d)=>s+d.hikingHours,0)/daysWithHiking.length*10)/10:null;
   const daysWithSleep=cData.filter(d=>d.sleepHours!=null);
   const avgSleep=daysWithSleep.length?Math.round(daysWithSleep.reduce((s,d)=>s+d.sleepHours,0)/daysWithSleep.length*10)/10:null;
+  const daysWithScore=cData.filter(d=>d.sleepScore!=null);
+  const avgScore=daysWithScore.length?Math.round(daysWithScore.reduce((s,d)=>s+d.sleepScore,0)/daysWithScore.length*10)/10:null;
   const avgWake=cData.filter(d=>d.wakeTime!=null);
   const avgWakeTime=avgWake.length?avgWake.reduce((s,d)=>s+d.wakeTime,0)/avgWake.length:null;
-  const avgSleepTime=cData.filter(d=>d.sleepTime!=null);
-  const avgBedtime=avgSleepTime.length?avgSleepTime.reduce((s,d)=>s+d.sleepTime,0)/avgSleepTime.length:null;
+  const avgBedtimeArr=cData.filter(d=>d.bedtime!=null);
+  // Bedtime averaging: normalize around midnight (add 24 to PM times for correct avg)
+  let avgBedtime=null;
+  if(avgBedtimeArr.length){
+    const normalized=avgBedtimeArr.map(d=>d.bedtime<12?d.bedtime+24:d.bedtime);
+    const raw=normalized.reduce((s,v)=>s+v,0)/normalized.length;
+    avgBedtime=raw>=24?raw-24:raw;
+  }
 
   // Steps per mile
   const stepsPerMile=daysWithSteps.filter(d=>d.daily>0).map(d=>({date:d.date,spm:Math.round((d.steps||0)/d.daily)}));
@@ -746,19 +749,24 @@ function renderStats(el){
 
     <div class="section">Sleep & schedule</div>
     <div class="metrics">
-      <div class="metric"><div class="metric-label">Avg wake up</div><div class="metric-val" style="color:${C.amber};font-size:1.1rem">${fmtTime(avgWakeTime)}</div></div>
       <div class="metric"><div class="metric-label">Avg bedtime</div><div class="metric-val" style="color:${C.purple};font-size:1.1rem">${fmtTime(avgBedtime)}</div></div>
+      <div class="metric"><div class="metric-label">Avg wake up</div><div class="metric-val" style="color:${C.amber};font-size:1.1rem">${fmtTime(avgWakeTime)}</div></div>
       <div class="metric"><div class="metric-label">Avg sleep</div><div class="metric-val" style="color:${C.blue}">${avgSleep!=null?avgSleep+'h':'—'}</div></div>
-      <div class="metric"><div class="metric-label">Avg hiking</div><div class="metric-val" style="color:${C.teal}">${avgHiking!=null?avgHiking+'h':'—'}</div></div>
+      ${daysWithScore.length?`<div class="metric"><div class="metric-label">Avg sleep score</div><div class="metric-val" style="color:${C.green}">${avgScore!=null?avgScore+'/10':'—'}</div></div>`
+      :`<div class="metric"><div class="metric-label">Avg hiking</div><div class="metric-val" style="color:${C.teal}">${avgHiking!=null?avgHiking+'h':'—'}</div></div>`}
     </div>
 
-    ${daysWithSleep.length>1||daysWithHiking.length>1?`
-    <div class="chart-label">Daily schedule</div>
-    <div class="chart-wrap" style="height:220px"><canvas id="ch-schedule"></canvas></div>
+    ${daysWithSleep.length>1||daysWithScore.length>1?`
+    <div class="chart-label">Sleep tracking</div>
+    <div class="chart-wrap" style="height:220px"><canvas id="ch-sleep"></canvas></div>
     <div class="legend">
       <span><span class="leg-sq" style="background:${C.blue}"></span>Sleep hours</span>
-      <span><span class="leg-sq" style="background:${C.teal}"></span>Hiking hours</span>
+      ${daysWithScore.length?`<span><span class="leg-ln" style="background:${C.green}"></span>Sleep score</span>`:''}
     </div>`:''}
+
+    ${daysWithHiking.length>1?`
+    <div class="chart-label">Hiking hours per day</div>
+    <div class="chart-wrap" style="height:180px"><canvas id="ch-hiking"></canvas></div>`:''}
 
     <div class="chart-label">Daily steps</div>
     <div class="chart-wrap" style="height:200px"><canvas id="ch-steps"></canvas></div>
@@ -778,26 +786,36 @@ function renderStats(el){
       ${d.steps!=null?`<span style="color:var(--tx2)">${fmt(d.steps)} steps</span>`:''}
       ${d.hikingHours!=null?`<span style="color:${C.teal}">${d.hikingHours}h hiking</span>`:''}
       ${d.sleepHours!=null?`<span style="color:${C.blue}">${d.sleepHours}h sleep</span>`:''}
+      ${d.sleepScore!=null?`<span style="color:${C.green}">score ${d.sleepScore}</span>`:''}
+      ${d.bedtimeRaw?`<span style="color:${C.purple}">🌙 ${escHtml(d.bedtimeRaw)}</span>`:''}
       ${d.wakeRaw?`<span style="color:${C.amber}">🌅 ${escHtml(d.wakeRaw)}</span>`:''}
-      ${d.sleepRaw?`<span style="color:${C.purple}">🌙 ${escHtml(d.sleepRaw)}</span>`:''}
       ${d.waters!=null&&d.waters>0?`<span style="color:${C.blue}">${d.waters} water</span>`:''}
       ${d.breaks!=null?`<span style="color:var(--tx3)">${d.breaks} breaks</span>`:''}
       ${d.hunger!=null?`<span style="color:${C.amber}">hunger ${d.hunger}</span>`:''}
       ${d.lodging?`<span style="color:var(--tx3)">${escHtml(d.lodging)}</span>`:''}
     </div>`).join('')}`;
 
-  // Schedule chart — sleep and hiking hours side by side
-  const schedData=cData.filter(d=>d.sleepHours!=null||d.hikingHours!=null);
-  if(schedData.length>1&&document.getElementById('ch-schedule')){
-    charts.push(new Chart(document.getElementById('ch-schedule'),{type:'bar',data:{
-      labels:schedData.map(d=>d.date),
-      datasets:[
-        {label:'Sleep hours',data:schedData.map(d=>d.sleepHours),backgroundColor:C.blue,borderRadius:4},
-        {label:'Hiking hours',data:schedData.map(d=>d.hikingHours),backgroundColor:C.teal,borderRadius:4},
-      ]
-    },options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},
-      scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
-        y:{ticks:{font:{size:10},color:tickColor(),callback:v=>v+'h'},grid:{color:gridColor()}}}}}));
+  // Sleep chart — hours as bars, score as line overlay
+  const sleepData=cData.filter(d=>d.sleepHours!=null||d.sleepScore!=null);
+  if(sleepData.length>1&&document.getElementById('ch-sleep')){
+    const datasets=[
+      {type:'bar',label:'Sleep hours',data:sleepData.map(d=>d.sleepHours),backgroundColor:C.blue,borderRadius:4,yAxisID:'y',order:2},
+    ];
+    const scales={
+      x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
+      y:{position:'left',ticks:{font:{size:10},color:tickColor(),callback:v=>v+'h'},grid:{color:gridColor()},title:{display:true,text:'Hours',font:{size:10},color:tickColor()}},
+    };
+    if(daysWithScore.length){
+      datasets.push({type:'line',label:'Sleep score',data:sleepData.map(d=>d.sleepScore),borderColor:C.green,borderWidth:2,pointRadius:2,tension:.3,spanGaps:true,yAxisID:'y1',order:1});
+      scales.y1={position:'right',min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{display:false},title:{display:true,text:'Score',font:{size:10},color:tickColor()}};
+    }
+    charts.push(new Chart(document.getElementById('ch-sleep'),{type:'bar',data:{labels:sleepData.map(d=>d.date),datasets},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales}}));
+  }
+
+  // Hiking hours chart
+  const hikingData=cData.filter(d=>d.hikingHours!=null);
+  if(hikingData.length>1&&document.getElementById('ch-hiking')){
+    charts.push(new Chart(document.getElementById('ch-hiking'),{type:'bar',data:{labels:hikingData.map(d=>d.date),datasets:[{label:'Hiking hours',data:hikingData.map(d=>d.hikingHours),backgroundColor:C.teal,borderRadius:4}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor(),callback:v=>v+'h'},grid:{color:gridColor()}}}}}));
   }
 
   const stepsData=cData.filter(d=>d.steps!=null);
