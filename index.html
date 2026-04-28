@@ -198,6 +198,8 @@ function parseCSV(text){
 }
 
 function num(v){const x=parseFloat(v);return isNaN(x)?null:x}
+// null-safe fallback: returns first non-null num() result (0 is valid)
+function numF(){for(let i=0;i<arguments.length;i++){const v=num(arguments[i]);if(v!=null)return v}return null}
 function fmt(x,d=0){return x==null?'—':x.toLocaleString(undefined,{minimumFractionDigits:d,maximumFractionDigits:d})}
 function sd(v){if(!v)return '';const d=new Date(v);return isNaN(d)?v:d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}
 function dateKey(v){if(!v)return '';const d=new Date(v);if(isNaN(d))return v.trim().toLowerCase();return d.toISOString().split('T')[0]}
@@ -229,10 +231,10 @@ function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(
 
 function dayPopup(d,dayNum,entry){
   const mile=num(d['end mile marker']);
-  const enjoy=num(d['enjoyment']||d['enjoyment ']);
-  const accom=num(d['accomplishment']||d['accomplishment ']);
-  const diff=num(d['difficulty']||d['difficulty ']);
-  const beauty=num(d['natural beauty']||d['natural beauty ']);
+  const enjoy=numF(d['enjoyment'],d['enjoyment ']);
+  const accom=numF(d['accomplishment'],d['accomplishment ']);
+  const diff=numF(d['difficulty'],d['difficulty ']);
+  const beauty=numF(d['natural beauty'],d['natural beauty ']);
   const sore=num(d['soreness']);
   const injury=num(d['injury level']);
   const weather=d.weather||'';
@@ -241,7 +243,7 @@ function dayPopup(d,dayNum,entry){
   const steps=num(d.steps);
   const magic=d['trail magic']||'';
   const lonely=num(d['lonelyness']);
-  const social=num(d['social interaction']||d['social interaction ']);
+  const social=numF(d['social interaction'],d['social interaction ']);
   const precip=d['overnight precipitation']||d['overnight precipitation ']||'';
 
   let h=`<div class="popup-date">Day ${dayNum} — ${sd(d.date)}</div>`;
@@ -263,7 +265,7 @@ function dayPopup(d,dayNum,entry){
   if(diff!=null) pills.push({l:'Difficulty',v:diff,bg:'#FAECE7',c:'#712B13'});
   if(beauty!=null) pills.push({l:'Beauty',v:beauty,bg:'#E6F1FB',c:'#0C447C'});
   if(sore!=null) pills.push({l:'Soreness',v:sore,bg:'#FBEAF0',c:'#72243E'});
-  if(injury!=null&&injury>0) pills.push({l:'Injury',v:injury,bg:'#FCEBEB',c:'#791F1F'});
+  if(injury!=null) pills.push({l:'Injury',v:injury,bg:'#FCEBEB',c:'#791F1F'});
   if(lonely!=null) pills.push({l:'Lonely',v:lonely,bg:'#EEEDFE',c:'#26215C'});
   if(social!=null) pills.push({l:'Social',v:social,bg:'#E1F5EE',c:'#04342C'});
 
@@ -555,7 +557,7 @@ function renderBodyMind(el){
     const o={date:sd(d.date)};
     ALL.forEach(f=>{
       // Handle trailing spaces in column names
-      o[f.l]=num(d[f.k])||num(d[f.k+' ']);
+      o[f.l]=numF(d[f.k],d[f.k+' ']);
     });
     return o;
   }).filter(d=>ALL.some(f=>d[f.l]!=null));
@@ -702,16 +704,16 @@ function renderStats(el){
     const wakeTime=parseTime(d['wake up']||d['wake up ']||'');
     const hunger=num(d['hunger level']);
     const lodging=d.lodging||'';
-    const lodgingCost=num(d['lodging cost'])||null;
-    const blisters=num(d.blisters)||null;
-    const packWeight=num(d['pack weight in morning'])||null;
-    const earbuds=num(d['percent hiked with earbuds'])||null;
+    const lodgingCost=num(d['lodging cost']);
+    const blisters=num(d.blisters);
+    const packWeight=num(d['pack weight in morning']);
+    const earbuds=num(d['percent hiked with earbuds']);
 
     // Sleep data
     const bedtime=parseTime(d['sleep time']||''); // when he fell asleep (e.g. "21:05")
     const inBedTime=parseTime(d['in bed time']||'');
     const sleepRatingWatch=d['sleep rating (watch)']||'';
-    const sleepRatingPersonal=num(d['sleep rating (personal)'])||null;
+    const sleepRatingPersonal=num(d['sleep rating (personal)']);
     const sleepWarmth=d['sleeping warmth']||'';
 
     // "sleep length" is H:MM format like "7:29" — parse to decimal hours
@@ -731,7 +733,7 @@ function renderStats(el){
     // Map watch sleep rating text to a number
     const watchRatingMap={'excellent':10,'great':9,'good':8,'ok':7,'fair':6,'poor':4,'bad':3,'terrible':2};
     const watchNum=sleepRatingWatch?watchRatingMap[sleepRatingWatch.toLowerCase()]||null:null;
-    const sleepScore=num(d['sleep score'])||num(d['sleep score '])||sleepRatingPersonal||watchNum;
+    const sleepScore=numF(d['sleep score'],d['sleep score '])||(sleepRatingPersonal!=null?sleepRatingPersonal:watchNum);
     // Hiking hours
     let hikingHours=null;
     if(startTime!=null&&stopTime!=null&&stopTime>startTime) hikingHours=Math.round((stopTime-startTime)*10)/10;
@@ -1026,7 +1028,7 @@ function renderTowns(el){
 
 // --- Social ---
 function renderSocial(el){
-  const cData=mainData.map(d=>({date:sd(d.date),people:num(d['number of people at camp']),social:num(d['social interaction'])||num(d['social interaction ']),lonely:num(d['lonelyness']),pctAlone:num(d['percent hiked alone'])})).filter(d=>d.people!=null||d.social!=null||d.lonely!=null);
+  const cData=mainData.map(d=>({date:sd(d.date),people:num(d['number of people at camp']),social:numF(d['social interaction'],d['social interaction ']),lonely:num(d['lonelyness']),pctAlone:num(d['percent hiked alone'])})).filter(d=>d.people!=null||d.social!=null||d.lonely!=null);
 
   // Trail magic log
   const magicDays=mainData.filter(d=>d['trail magic']&&d['trail magic'].toLowerCase()!=='no'&&d['trail magic'].trim()!=='0'&&d['trail magic'].trim()!=='');
