@@ -640,34 +640,39 @@ function renderBodyMind(el){
       <div style="font-size:.72rem;font-weight:500;color:${C.coral};text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px">Watch list</div>
       ${avgs.filter(a=>WATCH.some(w=>w.k===a.k)).map(a=>barRow(a,last?last[a.l]:null,a.avg,a.vals,true)).join('')}
     </div>
-    ${injuryDays.length?`<div class="section">Injury & pain log</div>
-    <div style="margin-bottom:20px">
-      ${injuryDays.slice().reverse().map(d=>{
-        const parts=[];
-        if(d.Injury!=null&&d.Injury>0) parts.push('<span style="color:'+C.red+';font-weight:500">Injury: '+d.Injury+'/10</span>');
-        if(d.Soreness!=null&&d.Soreness>0) parts.push('<span style="color:'+C.pink+'">Soreness: '+d.Soreness+'/10</span>');
-        if(d.blisters!=null&&d.blisters>0) parts.push('<span style="color:'+C.coral+'">Blisters: '+d.blisters+'</span>');
-        if(d.injuryReason) parts.push('<span style="color:var(--tx2);font-style:italic">'+escHtml(d.injuryReason)+'</span>');
-        if(!parts.length) return '';
-        return '<div class="town-card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:500;font-size:.85rem">'+d.date+'</span></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:.78rem">'+parts.join('')+'</div></div>';
-      }).filter(Boolean).join('')}
-    </div>`:''}
     <div class="chart-label">Trends over time <span style="font-size:.68rem;color:var(--tx3);font-weight:400">— click a metric to highlight</span></div>
     <div id="bm-legend" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <div class="chart-wrap" style="height:300px"><canvas id="ch-trends"></canvas></div>`;
 
-  // Build interactive chart with clickable legend
+  // Build interactive chart with clickable legend + custom tooltip with injury descriptions
   if(cData.length){
     const datasets=ALL.map(f=>({
       label:f.l,data:cData.map(d=>d[f.l]),borderColor:f.c,
       borderWidth:2,pointRadius:0,tension:.3,spanGaps:true,
     }));
 
+    // Custom tooltip that includes injury description and blisters
+    const customTooltip={
+      mode:'index',intersect:false,
+      callbacks:{
+        afterBody:function(items){
+          if(!items.length) return '';
+          const idx=items[0].dataIndex;
+          const d=cData[idx];
+          const lines=[];
+          if(d.injuryReason) lines.push('💬 '+d.injuryReason);
+          if(d.blisters!=null&&d.blisters>0) lines.push('🩹 Blisters: '+d.blisters);
+          return lines.length?'\n'+lines.join('\n'):'';
+        },
+        afterBodyFontStyle:'italic',
+      }
+    };
+
     const trendsChart=new Chart(document.getElementById('ch-trends'),{
       type:'line',
       data:{labels:cData.map(d=>d.date),datasets},
       options:{responsive:true,maintainAspectRatio:false,
-        plugins:{legend:{display:false},tooltip:{mode:'index',intersect:false}},
+        plugins:{legend:{display:false},tooltip:customTooltip},
         scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},
           y:{min:0,max:10,ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}},
         interaction:{mode:'index',intersect:false},
