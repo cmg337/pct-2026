@@ -573,6 +573,7 @@ function renderBodyMind(el){
   const WATCH=[
     {k:'difficulty',l:'Difficulty',c:C.coral},{k:'hunger level',l:'Hunger',c:C.amber},
     {k:'soreness',l:'Soreness',c:C.pink},{k:'injury level',l:'Injury',c:C.red},
+    {k:'blisters',l:'Blisters',c:C.coralLt},
     {k:'lonelyness',l:'Loneliness',c:C.purple},
   ];
   const ALL=[...GOOD,...WATCH];
@@ -583,11 +584,16 @@ function renderBodyMind(el){
       // Handle trailing spaces in column names
       o[f.l]=numF(d[f.k],d[f.k+' ']);
     });
+    o.blisters=num(d.blisters);
+    o.injuryReason=d['injury description']||d['injury description ']||d['injury reason']||d['injury reason ']||d['injury notes']||d['injury notes ']||'';
     return o;
   }).filter(d=>ALL.some(f=>d[f.l]!=null));
 
   const last=cData[cData.length-1];
   const avgs=ALL.map(f=>{const v=cData.map(d=>d[f.l]).filter(x=>x!=null);return{...f,avg:v.length?Math.round(v.reduce((a,b)=>a+b,0)/v.length*10)/10:0,vals:v}});
+
+  // Injury & pain log — days with injury > 0, blisters > 0, or an injury reason
+  const injuryDays=cData.filter(d=>(d.Injury!=null&&d.Injury>0)||(d.blisters!=null&&d.blisters>0)||d.injuryReason);
 
   // Build sparkline SVGs inline
   function sparkSvg(vals,color){
@@ -634,6 +640,18 @@ function renderBodyMind(el){
       <div style="font-size:.72rem;font-weight:500;color:${C.coral};text-transform:uppercase;letter-spacing:.04em;margin:14px 0 8px">Watch list</div>
       ${avgs.filter(a=>WATCH.some(w=>w.k===a.k)).map(a=>barRow(a,last?last[a.l]:null,a.avg,a.vals,true)).join('')}
     </div>
+    ${injuryDays.length?`<div class="section">Injury & pain log</div>
+    <div style="margin-bottom:20px">
+      ${injuryDays.slice().reverse().map(d=>{
+        const parts=[];
+        if(d.Injury!=null&&d.Injury>0) parts.push('<span style="color:'+C.red+';font-weight:500">Injury: '+d.Injury+'/10</span>');
+        if(d.Soreness!=null&&d.Soreness>0) parts.push('<span style="color:'+C.pink+'">Soreness: '+d.Soreness+'/10</span>');
+        if(d.blisters!=null&&d.blisters>0) parts.push('<span style="color:'+C.coral+'">Blisters: '+d.blisters+'</span>');
+        if(d.injuryReason) parts.push('<span style="color:var(--tx2);font-style:italic">'+escHtml(d.injuryReason)+'</span>');
+        if(!parts.length) return '';
+        return '<div class="town-card"><div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-weight:500;font-size:.85rem">'+d.date+'</span></div><div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;font-size:.78rem">'+parts.join('')+'</div></div>';
+      }).filter(Boolean).join('')}
+    </div>`:''}
     <div class="chart-label">Trends over time <span style="font-size:.68rem;color:var(--tx3);font-weight:400">— click a metric to highlight</span></div>
     <div id="bm-legend" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
     <div class="chart-wrap" style="height:300px"><canvas id="ch-trends"></canvas></div>`;
@@ -764,6 +782,12 @@ function renderStats(el){
     return{date:sd(d.date),daily:Math.max(0,Math.round((curMile-prevMile)*10)/10),steps,waters,breaks,
       startTime,stopTime,wakeTime,bedtime,inBedTime,hikingHours,sleepHours,sleepScore,
       sleepRatingWatch,sleepWarmth,hunger,lodging,lodgingCost,blisters,packWeight,earbuds,
+      nonPctMiles:num(d['non pct miles hiked']),
+      realToilet:d['used a real toilet']||'',
+      teethBrushing:num(d['number of teeth brushing']),
+      retainer:d['wore retainer']||'',
+      flossed:d['flossed']||'',
+      injuryDesc:d['injury description']||d['injury description ']||'',
       startRaw:d['hiking start time']||'',stopRaw:d['hiking stop time']||'',
       wakeRaw:d['wake up']||d['wake up ']||'',bedtimeRaw:d['sleep time']||'',
       sleepLengthRaw:slRaw};
@@ -841,6 +865,27 @@ function renderStats(el){
       ${lodgingEntries.map(([k,v])=>`<div class="avg-pill"><span style="font-weight:500">${v}</span><span style="color:var(--tx2)">${k}</span></div>`).join('')}
     </div>`:''}
 
+    ${(()=>{
+      const pw=cData.filter(d=>d.packWeight!=null);
+      const avgPW=pw.length?Math.round(pw.reduce((s,d)=>s+d.packWeight,0)/pw.length*10)/10:null;
+      const toiletDays=cData.filter(d=>d.realToilet&&d.realToilet.toLowerCase()!=='no'&&d.realToilet.trim()!=='0'&&d.realToilet.trim()!=='').length;
+      const totalLodgingCost=cData.reduce((s,d)=>s+(d.lodgingCost||0),0);
+      const earbudDays=cData.filter(d=>d.earbuds!=null);
+      const avgEarbuds=earbudDays.length?Math.round(earbudDays.reduce((s,d)=>s+d.earbuds,0)/earbudDays.length):null;
+      const totalNonPct=cData.reduce((s,d)=>s+(d.nonPctMiles||0),0);
+      const hasFunStats=avgPW||toiletDays||totalLodgingCost||avgEarbuds!=null||totalNonPct;
+      if(!hasFunStats) return '';
+      return '<div class="section">Trail life</div><div class="metrics">'
+        +(avgPW!=null?'<div class="metric"><div class="metric-label">Avg pack weight</div><div class="metric-val" style="color:'+C.green+'">'+avgPW+'</div><div class="metric-sub">lbs (morning)</div></div>':'')
+        +(avgEarbuds!=null?'<div class="metric"><div class="metric-label">Avg earbuds use</div><div class="metric-val" style="color:'+C.blue+'">'+avgEarbuds+'%</div></div>':'')
+        +(toiletDays?'<div class="metric"><div class="metric-label">Real toilet days</div><div class="metric-val" style="color:'+C.purple+'">'+toiletDays+'</div><div class="metric-sub">of '+cData.length+' days</div></div>':'')
+        +(totalLodgingCost?'<div class="metric"><div class="metric-label">Total lodging cost</div><div class="metric-val" style="color:'+C.amber+'">$'+fmt(totalLodgingCost)+'</div></div>':'')
+        +(totalNonPct?'<div class="metric"><div class="metric-label">Non-PCT miles</div><div class="metric-val" style="color:'+C.gray+'">'+fmt(totalNonPct,1)+'</div></div>':'')
+        +'</div>';
+    })()}
+
+    ${cData.filter(d=>d.packWeight!=null).length>1?`<div class="chart-label">Pack weight over time</div><div class="chart-wrap" style="height:180px"><canvas id="ch-pack"></canvas></div>`:''}
+
     <div class="section">Daily log</div>
     ${cData.slice().reverse().slice(0,14).map(d=>`<div class="log-row" style="flex-wrap:wrap;gap:6px">
       <span class="date">${d.date}</span>
@@ -893,6 +938,12 @@ function renderStats(el){
 
   if(stepsPerMile.length>1){
     charts.push(new Chart(document.getElementById('ch-spm'),{type:'line',data:{labels:stepsPerMile.map(d=>d.date),datasets:[{label:'Steps/mile',data:stepsPerMile.map(d=>d.spm),borderColor:C.green,borderWidth:2,tension:.3,pointRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor()},grid:{color:gridColor()}}}}}));
+  }
+
+  // Pack weight chart
+  const packData=cData.filter(d=>d.packWeight!=null);
+  if(packData.length>1&&document.getElementById('ch-pack')){
+    charts.push(new Chart(document.getElementById('ch-pack'),{type:'line',data:{labels:packData.map(d=>d.date),datasets:[{label:'Pack weight (lbs)',data:packData.map(d=>d.packWeight),borderColor:C.green,backgroundColor:C.greenLt+'30',fill:true,borderWidth:2,tension:.3,pointRadius:2}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},color:tickColor()},grid:{display:false}},y:{ticks:{font:{size:10},color:tickColor(),callback:v=>v+' lbs'},grid:{color:gridColor()}}}}}));
   }
 }
 
