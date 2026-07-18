@@ -144,6 +144,7 @@
 
 <script>
 const SHEET_ID='2PACX-1vQQ7hgL-u87lGBjAHFrfvn-sUKc3tcsCGso-K7l91wTjEuORVgwBzEs-aCJPzch_8Oy1UBT6jRUis2-';
+const REAL_ID='1lvZNF-fpStndLue7UnjGehq7ntL9XiQwiUjSkrCzoGs'; // actual spreadsheet ID (requires link-sharing: Anyone with link → Viewer)
 const DATA_GID='0', TOWN_GID='358115642', ENTRIES_GID='317284039';
 const PCT_TOTAL=2650;
 
@@ -286,32 +287,40 @@ async function loadData(){
   destroyCharts();destroyMap();
 
   const gids=[DATA_GID,TOWN_GID,ENTRIES_GID];
+  // Direct-ID gviz endpoint (requires sheet link-sharing set to Anyone with link → Viewer)
+  const gvizReal=gids.map(g=>`https://docs.google.com/spreadsheets/d/${REAL_ID}/gviz/tq?tqx=out:csv&gid=${g}`);
+  // Published-to-web endpoints (2PACX token)
   const gviz=gids.map(g=>`https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/gviz/tq?tqx=out:csv&gid=${g}`);
   const pub=gids.map(g=>`https://docs.google.com/spreadsheets/d/e/${SHEET_ID}/pub?gid=${g}&single=true&output=csv`);
 
   let ok=false;
-  for(const batch of[gviz,pub]){
+  let lastError='';
+  for(const batch of[gvizReal,gviz,pub]){
     try{
-      const res=await Promise.all(batch.map(u=>fetch(u)));
+      const res=await Promise.all(batch.map(u=>fetch(u).catch(e=>({ok:false,status:'network/CORS',text:()=>Promise.resolve('')}))));
+      const statuses=res.map(r=>r.ok?'OK':(r.status||'failed'));
+      console.log('Fetch batch:',batch[0].includes('gviz')?'gviz':'pub','→ statuses:',statuses);
+      if(!res[0].ok){lastError=`Main data sheet returned ${statuses[0]}`;continue;}
       const txt=await Promise.all(res.map(r=>r.text()));
       const p=parseCSV(txt[0]);
-      if(!p.length)throw new Error('empty');
+      if(!p.length){lastError='Main data sheet returned an empty/invalid CSV';continue;}
       mainData=p;townData=parseCSV(txt[1]);entriesData=parseCSV(txt[2]);
       // Debug: log column names and first row to help diagnose mismatches
       if(p.length){
         console.log('All columns:', Object.keys(p[0]));
-        const sleepCols=Object.keys(p[0]).filter(k=>k.includes('sleep')||k.includes('wake')||k.includes('bed'));
-        console.log('Sleep-related columns:', sleepCols);
-        console.log('First row sleep values:', sleepCols.map(k=>k+' = '+JSON.stringify(p[0][k])));
-        console.log('First row all values:', JSON.stringify(p[0]));
       }
       ok=true;break;
-    }catch(e){}
+    }catch(e){lastError=e.message;}
   }
 
   if(!ok){
     document.getElementById('subtitle').textContent='';
-    document.getElementById('content').innerHTML='<div class="center-msg err">Could not load data.<br>Make sure the Google Sheet is published to web<br>(File → Share → Publish to web).</div>';
+    document.getElementById('content').innerHTML=`<div class="center-msg err">Could not load data from Google Sheets.<br>
+      <span style="font-size:.78rem">${lastError?escHtml(lastError)+'.<br>':''}
+      The "Publish to web" link may have changed or been turned off.<br>
+      In Google Sheets: File → Share → Publish to web → Publish,<br>
+      then verify the CSV URL opens in a browser tab.</span><br><br>
+      <button class="btn-refresh" onclick="loadData()">Retry</button></div>`;
     return;
   }
 
