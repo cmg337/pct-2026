@@ -445,7 +445,13 @@ function drawLeafletMap(mile){
   }).addTo(leafMap);
 
   // Fetch real trail, then render everything
+  // Capture this map instance — if the user switches tabs before the
+  // trail fetch resolves, leafMap becomes null/different and we must bail
+  const thisMap=leafMap;
+
   fetchTrailGeoJSON().then(gj=>{
+    // Bail if the map was destroyed or replaced while fetching
+    if(!thisMap||leafMap!==thisMap) return;
     // Build coord array and snapping function
     const allCoords=gj?getAllTrailCoords(gj):null;
     const startIdx=allCoords?findClosestTrailPoint(allCoords,32.59,-116.47):0;
@@ -516,28 +522,28 @@ function drawLeafletMap(mile){
 
     if(gj){
       // Full trail — gray dashed
-      L.geoJSON(gj,{style:{color:C.grayLt,weight:3,opacity:.4,dashArray:'8 6'}}).addTo(leafMap);
+      L.geoJSON(gj,{style:{color:C.grayLt,weight:3,opacity:.4,dashArray:'8 6'}}).addTo(thisMap);
       // Hiked portion — solid teal, sliced from real coords
       if(mile>0){
         const curIdx=mileToIdx(mile);
         if(curIdx>startIdx){
           const hikedCoords=allCoords.slice(Math.min(startIdx,curIdx),Math.max(startIdx,curIdx)+1);
-          if(hikedCoords.length>1) L.polyline(hikedCoords,{color:C.teal,weight:4,opacity:.9}).addTo(leafMap);
+          if(hikedCoords.length>1) L.polyline(hikedCoords,{color:C.teal,weight:4,opacity:.9}).addTo(thisMap);
         }
       }
     } else {
       // Fallback waypoints
-      L.polyline(WP.map(w=>[w.lat,w.lng]),{color:C.grayLt,weight:3,opacity:.45,dashArray:'8 6'}).addTo(leafMap);
+      L.polyline(WP.map(w=>[w.lat,w.lng]),{color:C.grayLt,weight:3,opacity:.45,dashArray:'8 6'}).addTo(thisMap);
       if(mile>0){
         const hw=WP.filter(w=>w.m<=mile);const cp=getMilePos(mile);hw.push({lat:cp.lat,lng:cp.lng});
-        L.polyline(hw.map(w=>[w.lat,w.lng]),{color:C.teal,weight:4,opacity:.9}).addTo(leafMap);
+        L.polyline(hw.map(w=>[w.lat,w.lng]),{color:C.teal,weight:4,opacity:.9}).addTo(thisMap);
       }
     }
 
     // Landmarks — snapped to trail
     LANDMARKS.forEach(lm=>{
       const p=snapToTrail(lm.m);const isH=lm.m<=mile;
-      L.circleMarker([p.lat,p.lng],{radius:4,fillColor:isH?C.teal:C.grayLt,fillOpacity:.8,color:'white',weight:1}).addTo(leafMap)
+      L.circleMarker([p.lat,p.lng],{radius:4,fillColor:isH?C.teal:C.grayLt,fillOpacity:.8,color:'white',weight:1}).addTo(thisMap)
        .bindTooltip(lm.l,{permanent:false,direction:'right',offset:[8,0]});
     });
 
@@ -547,7 +553,7 @@ function drawLeafletMap(mile){
       const m=num(d['end mile marker']);if(m==null)return;
       const pos=snapToTrail(m);
       const entry=entriesMap[dateKey(d.date)]||'';
-      const marker=L.circleMarker([pos.lat,pos.lng],{radius:7,fillColor:C.purple,fillOpacity:.85,color:'white',weight:2}).addTo(leafMap);
+      const marker=L.circleMarker([pos.lat,pos.lng],{radius:7,fillColor:C.purple,fillOpacity:.85,color:'white',weight:2}).addTo(thisMap);
       marker.bindPopup(dayPopup(d,i+1,entry),{maxWidth:300,minWidth:220});
       marker.bindTooltip(`Day ${i+1}: ${sd(d.date)} — mi ${fmt(m)}`,{direction:'top',offset:[0,-10]});
     });
@@ -555,11 +561,11 @@ function drawLeafletMap(mile){
     // Current position — snapped to trail
     if(mile>0){
       const cur=snapToTrail(mile);
-      L.circleMarker([cur.lat,cur.lng],{radius:14,fillColor:C.coral,fillOpacity:.15,color:C.coral,weight:2,opacity:.5}).addTo(leafMap);
-      L.circleMarker([cur.lat,cur.lng],{radius:7,fillColor:C.coral,fillOpacity:1,color:'white',weight:2.5}).addTo(leafMap)
+      L.circleMarker([cur.lat,cur.lng],{radius:14,fillColor:C.coral,fillOpacity:.15,color:C.coral,weight:2,opacity:.5}).addTo(thisMap);
+      L.circleMarker([cur.lat,cur.lng],{radius:7,fillColor:C.coral,fillOpacity:1,color:'white',weight:2.5}).addTo(thisMap)
        .bindTooltip(`Current: mile ${fmt(mile)}`,{direction:'top',offset:[0,-12]});
       const bounds=L.latLngBounds([[32.59,-116.47],[cur.lat,cur.lng]]);
-      leafMap.fitBounds(bounds.pad(0.2));
+      thisMap.fitBounds(bounds.pad(0.2));
     }
   });
 }
